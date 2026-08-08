@@ -34,7 +34,7 @@ export function ContainerScroll({
 
         <motion.div
           style={{ rotateX: rotate, scale, opacity }}
-          className="mx-auto mt-10 h-[26rem] w-full max-w-6xl rounded-[2rem] border border-glass p-2 shadow-lift md:h-[38rem] md:p-4"
+          className="mx-auto mt-10 h-[26rem] w-full max-w-6xl rounded-[2rem] border border-border p-2 md:h-[38rem] md:p-4"
         >
           <div className="glass relative h-full w-full overflow-hidden rounded-[1.6rem]">
             <div className="pointer-events-none absolute inset-0 halo" />
