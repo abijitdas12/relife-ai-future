@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as SigninRouteImport } from './routes/signin'
+import { Route as SkillCentersRouteImport } from './routes/skill-centers'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const SigninRoute = SigninRouteImport.update({
   path: '/signin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SkillCentersRoute = SkillCentersRouteImport.update({
+  id: '/skill-centers',
+  path: '/skill-centers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/scan': typeof ScanRoute
   '/signin': typeof SigninRoute
+  '/skill-centers': typeof SkillCentersRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/scan': typeof ScanRoute
   '/signin': typeof SigninRoute
+  '/skill-centers': typeof SkillCentersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/scan': typeof ScanRoute
   '/signin': typeof SigninRoute
+  '/skill-centers': typeof SkillCentersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/scan' | '/signin'
+  fullPaths: '/' | '/scan' | '/signin' | '/skill-centers'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/scan' | '/signin'
-  id: '__root__' | '/' | '/scan' | '/signin'
+  to: '/' | '/scan' | '/signin' | '/skill-centers'
+  id: '__root__' | '/' | '/scan' | '/signin' | '/skill-centers'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ScanRoute: typeof ScanRoute
   SigninRoute: typeof SigninRoute
+  SkillCentersRoute: typeof SkillCentersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SigninRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/skill-centers': {
+      id: '/skill-centers'
+      path: '/skill-centers'
+      fullPath: '/skill-centers'
+      preLoaderRoute: typeof SkillCentersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ScanRoute: ScanRoute,
   SigninRoute: SigninRoute,
+  SkillCentersRoute: SkillCentersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
