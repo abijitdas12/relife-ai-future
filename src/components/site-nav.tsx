@@ -6,13 +6,15 @@ import { ThemeToggle } from "./theme-toggle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const links = [
+type NavLink = { label: string; to: "/" | "/skill-centers" | "/dashboard"; hash?: string };
+
+const links: NavLink[] = [
   { label: "How It Works", to: "/", hash: "how-it-works" },
   { label: "R5 Framework", to: "/", hash: "r5" },
-  { label: "Skill Centers", to: "/skill-centers", hash: undefined },
-  { label: "Impact", to: "/dashboard", hash: undefined },
+  { label: "Skill Centers", to: "/skill-centers" },
+  { label: "Impact", to: "/dashboard" },
   { label: "About", to: "/", hash: "about" },
-] as const;
+];
 
 export function SiteNav() {
   const [open, setOpen] = useState(false);
@@ -30,7 +32,7 @@ export function SiteNav() {
       <nav
         className={cn(
           "mx-auto flex max-w-7xl items-center justify-between rounded-2xl px-4 py-2.5 transition-all duration-500",
-          scrolled ? "glass shadow-lift" : "border border-transparent",
+          scrolled ? "glass" : "border border-transparent",
         )}
       >
         <Link to="/" onClick={() => setOpen(false)}>
@@ -42,7 +44,7 @@ export function SiteNav() {
             <li key={l.label}>
               <Link
                 to={l.to}
-                hash={l.hash}
+                {...(l.hash ? { hash: l.hash } : {})}
                 className="rounded-full px-3.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {l.label}
@@ -79,7 +81,7 @@ export function SiteNav() {
               <li key={l.label}>
                 <Link
                   to={l.to}
-                  hash={l.hash}
+                  {...(l.hash ? { hash: l.hash } : {})}
                   onClick={() => setOpen(false)}
                   className="block rounded-xl px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
