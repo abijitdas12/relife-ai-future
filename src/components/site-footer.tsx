@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Github, Instagram, Linkedin, Twitter, Youtube } from "lucide-react";
-import { BrandMark } from "./brand";
+import { BrandLockup } from "./brand";
 
 const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/skill-centers" | "/dashboard" | "/signin"; hash?: string }[] }[] = [
   {
