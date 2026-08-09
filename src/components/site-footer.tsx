@@ -36,7 +36,7 @@ export function SiteFooter() {
     <footer className="relative mt-20 border-t border-border">
       <div className="mx-auto grid max-w-7xl gap-12 px-5 py-16 md:grid-cols-[1.4fr_repeat(3,1fr)]">
         <div className="flex flex-col gap-4">
-          <BrandMark />
+          <BrandLockup />
           <p className="max-w-xs text-sm leading-relaxed text-muted-foreground">
             Repair More. Waste Less. Building a sustainable India through AI-driven circular repair
             intelligence.
