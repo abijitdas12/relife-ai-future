@@ -6,15 +6,21 @@ import { ThemeToggle } from "./theme-toggle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type NavLink = { label: string; to: "/" | "/skill-centers" | "/dashboard"; hash?: string };
+type NavLink = {
+  label: string;
+  to: "/" | "/skill-centers" | "/dashboard" | "/pickup" | "/careers";
+  hash?: string;
+};
 
 const links: NavLink[] = [
   { label: "How It Works", to: "/", hash: "how-it-works" },
   { label: "R5 Framework", to: "/", hash: "r5" },
+  { label: "Pickup", to: "/pickup" },
   { label: "Skill Centers", to: "/skill-centers" },
+  { label: "Careers", to: "/careers" },
   { label: "Impact", to: "/dashboard" },
-  { label: "About", to: "/", hash: "about" },
 ];
+
 
 export function SiteNav() {
   const [open, setOpen] = useState(false);
