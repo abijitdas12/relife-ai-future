@@ -76,7 +76,7 @@ export function PickupFlow() {
     address.city.trim().length > 1 &&
     /^\d{6}$/.test(address.pincode.trim());
 
-  const next = () => {
+  const next = async () => {
     if (step === 0 && !addressValid) {
       toast.error("Please complete name, 10-digit phone, address, city and 6-digit PIN.");
       return;
@@ -87,13 +87,41 @@ export function PickupFlow() {
     }
     if (step === 2) toast.success("Estimate approved — choose how you'd like to pay.");
     if (step === 3) {
+      if (!quote) return;
       const m = PAYMENT_METHODS.find((p) => p.id === method)!;
-      toast.success(`${m.label} selected. Pickup scheduled (prototype — no real charge).`);
+      const ref = `RL-${Math.floor(100000 + Math.random() * 899999)}`;
+      setSaving(true);
+      const { error } = await supabase.from("pickup_requests").insert({
+        reference: ref,
+        customer_name: address.name.trim(),
+        phone: address.phone.trim(),
+        address_line: address.line1.trim(),
+        landmark: address.landmark.trim() || null,
+        city: address.city.trim(),
+        pincode: address.pincode.trim(),
+        slot: address.slot,
+        notes: address.notes.trim() || null,
+        device: device.label,
+        faults,
+        urgency,
+        estimated_total: Math.round(quote.total),
+        amount_paid_now: Math.round(payMode === "advance" ? quote.advance : quote.total),
+        payment_method: m.label,
+        payment_mode: payMode,
+      });
+      setSaving(false);
+      if (error) {
+        toast.error("Could not save your booking. Please try again.");
+        return;
+      }
+      setReference(ref);
+      toast.success(`${m.label} selected. Pickup booked — reference ${ref}.`);
     }
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
 
   const payable = quote ? (payMode === "advance" ? quote.advance : quote.total) : 0;
+
 
   return (
     <Section className="pt-6">
