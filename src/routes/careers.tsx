@@ -3,6 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { ArrowRight, Briefcase, GraduationCap, MapPin, Search, Send, X } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+
 import { SiteNav } from "@/components/site-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
@@ -254,7 +256,7 @@ function CareersPage() {
             </p>
           )}
           <p className="mt-8 text-xs text-muted-foreground">
-            Prototype careers board — openings are illustrative and applications are not stored.
+            Openings are illustrative for now, but every application is recorded and reviewed.
           </p>
         </Section>
 
@@ -291,6 +293,7 @@ function CareersPage() {
 }
 
 function ApplyDialog({ job, onClose }: { job: Job; onClose: () => void }) {
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -300,14 +303,31 @@ function ApplyDialog({ job, onClose }: { job: Job; onClose: () => void }) {
     skills: "",
   });
 
-  const submit = () => {
+  const submit = async () => {
     if (form.name.trim().length < 2 || !/^[6-9]\d{9}$/.test(form.phone.trim())) {
       toast.error("Enter your name and a valid 10-digit mobile number.");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from("job_applications").insert({
+      job_title: job.title,
+      track: job.track,
+      applicant_name: form.name.trim(),
+      phone: form.phone.trim(),
+      email: form.email.trim() || null,
+      city: form.city.trim() || null,
+      experience: form.experience,
+      skills: form.skills.trim() || null,
+    });
+    setSaving(false);
+    if (error) {
+      toast.error("Could not submit your application. Please try again.");
       return;
     }
     toast.success(`Application received for ${job.title}. Our team will call you for a skill check.`);
     onClose();
   };
+
 
   return (
     <div className="fixed inset-0 z-[60] grid place-items-center p-4">
@@ -401,11 +421,12 @@ function ApplyDialog({ job, onClose }: { job: Job; onClose: () => void }) {
               placeholder="Fans and mixers, basic soldering, laptop RAM/SSD swaps…"
             />
           </Row>
-          <Button variant="hero" size="lg" onClick={submit}>
-            Submit application <Send className="h-4 w-4" />
+          <Button variant="hero" size="lg" onClick={submit} disabled={saving}>
+            {saving ? "Submitting…" : "Submit application"} <Send className="h-4 w-4" />
           </Button>
           <p className="text-xs text-muted-foreground">
-            Prototype form — nothing is submitted or stored yet.
+            Your application is sent to the ReLife hiring team — we only use it to contact you.
+
           </p>
         </div>
       </motion.div>

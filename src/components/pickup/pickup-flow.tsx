@@ -15,6 +15,8 @@ import {
   Truck,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,6 +64,9 @@ export function PickupFlow() {
   const [urgency, setUrgency] = useState<UrgencyKey>("standard");
   const [method, setMethod] = useState<PaymentId>("upi");
   const [payMode, setPayMode] = useState<PayMode>("advance");
+  const [saving, setSaving] = useState(false);
+  const [reference, setReference] = useState("");
+
 
   const device = DEVICES.find((d) => d.key === deviceKey)!;
   const quote = useMemo(
@@ -76,7 +81,7 @@ export function PickupFlow() {
     address.city.trim().length > 1 &&
     /^\d{6}$/.test(address.pincode.trim());
 
-  const next = () => {
+  const next = async () => {
     if (step === 0 && !addressValid) {
       toast.error("Please complete name, 10-digit phone, address, city and 6-digit PIN.");
       return;
@@ -87,13 +92,41 @@ export function PickupFlow() {
     }
     if (step === 2) toast.success("Estimate approved — choose how you'd like to pay.");
     if (step === 3) {
+      if (!quote) return;
       const m = PAYMENT_METHODS.find((p) => p.id === method)!;
-      toast.success(`${m.label} selected. Pickup scheduled (prototype — no real charge).`);
+      const ref = `RL-${Math.floor(100000 + Math.random() * 899999)}`;
+      setSaving(true);
+      const { error } = await supabase.from("pickup_requests").insert({
+        reference: ref,
+        customer_name: address.name.trim(),
+        phone: address.phone.trim(),
+        address_line: address.line1.trim(),
+        landmark: address.landmark.trim() || null,
+        city: address.city.trim(),
+        pincode: address.pincode.trim(),
+        slot: address.slot,
+        notes: address.notes.trim() || null,
+        device: device.label,
+        faults,
+        urgency,
+        estimated_total: Math.round(quote.total),
+        amount_paid_now: Math.round(payMode === "advance" ? quote.advance : quote.total),
+        payment_method: m.label,
+        payment_mode: payMode,
+      });
+      setSaving(false);
+      if (error) {
+        toast.error("Could not save your booking. Please try again.");
+        return;
+      }
+      setReference(ref);
+      toast.success(`${m.label} selected. Pickup booked — reference ${ref}.`);
     }
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
 
   const payable = quote ? (payMode === "advance" ? quote.advance : quote.total) : 0;
+
 
   return (
     <Section className="pt-6">
@@ -428,7 +461,9 @@ export function PickupFlow() {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Prototype checkout — no real payment is processed and no card details are collected.
+                Your booking is saved to ReLife. No card details are collected — payment is settled
+                at pickup or via the link we send you.
+
               </p>
             </div>
           )}
@@ -445,7 +480,7 @@ export function PickupFlow() {
               </span>
               <h2 className="font-display text-2xl font-semibold">Pickup confirmed</h2>
               <p className="mx-auto max-w-lg text-sm text-muted-foreground">
-                Request <span className="font-mono text-foreground">RL-{Math.floor(100000 + Math.random() * 899999)}</span>{" "}
+                Request <span className="font-mono text-foreground">{reference}</span>{" "}
                 is scheduled for {address.slot.toLowerCase()} at {address.city} {address.pincode}. A
                 collection partner will call {address.phone} before arriving.
               </p>
@@ -470,12 +505,15 @@ export function PickupFlow() {
                   <ArrowLeft className="h-4 w-4" /> Back
                 </Button>
               )}
-              <Button variant="hero" size="lg" onClick={next}>
-                {step === 2
-                  ? "Approve estimate"
-                  : step === 3
-                    ? `Pay ${inr(payable)}`
-                    : "Continue"}{" "}
+              <Button variant="hero" size="lg" onClick={next} disabled={saving}>
+                {saving
+                  ? "Booking…"
+                  : step === 2
+                    ? "Approve estimate"
+                    : step === 3
+                      ? `Pay ${inr(payable)}`
+                      : "Continue"}{" "}
+
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
