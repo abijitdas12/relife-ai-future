@@ -478,7 +478,7 @@ export function PickupFlow() {
               </span>
               <h2 className="font-display text-2xl font-semibold">Pickup confirmed</h2>
               <p className="mx-auto max-w-lg text-sm text-muted-foreground">
-                Request <span className="font-mono text-foreground">RL-{Math.floor(100000 + Math.random() * 899999)}</span>{" "}
+                Request <span className="font-mono text-foreground">{reference}</span>{" "}
                 is scheduled for {address.slot.toLowerCase()} at {address.city} {address.pincode}. A
                 collection partner will call {address.phone} before arriving.
               </p>
