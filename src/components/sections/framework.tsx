@@ -115,35 +115,54 @@ export function HowItWorks() {
     <Section id="how-it-works">
       <SectionHeading
         eyebrow="How it works"
-        title="Seven steps from broken to"
-        gradientTail="reborn."
-        subtitle="A single decision pipeline that runs from the customer's camera to the workshop bench."
+        title="Three phases, seven steps, one"
+        gradientTail="decision pipeline."
+        subtitle="Every device follows the same path — from the customer's camera, through the ReLife Decision Engine, to a Skill Center bench."
       />
 
-      <div className="relative mt-16">
-        <div className="absolute left-[1.35rem] top-0 hidden h-full w-px bg-border md:block" />
-        <div className="grid gap-4">
-          {steps.map((s, i) => (
-            <Reveal key={s.n} delay={i * 0.05}>
-              <div className="relative flex flex-col gap-4 md:flex-row md:items-stretch">
-                <span className="relative z-10 hidden h-11 w-11 shrink-0 place-items-center rounded-full border border-emerald/40 bg-surface md:grid">
-                  <s.icon className="h-4 w-4 text-emerald" />
-                </span>
-                <div className="card-surface lift flex-1 p-6 md:ml-4">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="font-mono text-xs tracking-[0.18em] text-electric">
-                      STEP {s.n}
-                    </span>
-                    <h3 className="font-display text-lg font-semibold">{s.title}</h3>
-                  </div>
-                  <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                    {s.body}
+      <div className="mt-14 grid gap-4 lg:grid-cols-3">
+        {phases.map((phase, pi) => (
+          <Reveal key={phase.id} delay={pi * 0.08}>
+            <div className="card-surface relative flex h-full flex-col p-6">
+              <div className="flex items-baseline justify-between gap-3 border-b border-border pb-4">
+                <div>
+                  <p className="font-mono text-[0.65rem] tracking-[0.22em] text-electric">
+                    PHASE {pi + 1} / 3
                   </p>
+                  <h3 className="mt-1 font-display text-xl font-semibold">{phase.label}</h3>
                 </div>
+                <span className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
+                  {phase.steps.length} steps
+                </span>
               </div>
-            </Reveal>
-          ))}
-        </div>
+              <p className="mt-3 text-xs text-muted-foreground">{phase.hint}</p>
+
+              <ol className="relative mt-5 grid gap-3">
+                <span className="absolute left-[1.05rem] top-3 bottom-3 w-px bg-border" aria-hidden />
+                {phase.steps.map((s) => (
+                  <li key={s.n} className="relative flex gap-4 rounded-xl border border-border/60 bg-muted/30 p-4">
+                    <span className="relative z-10 grid h-[2.1rem] w-[2.1rem] shrink-0 place-items-center rounded-lg border border-emerald/40 bg-surface">
+                      <s.icon className="h-4 w-4 text-emerald" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[0.65rem] tracking-[0.16em] text-lime">
+                          {s.n}
+                        </span>
+                        <h4 className="font-display text-sm font-semibold">{s.title}</h4>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{s.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              {pi < phases.length - 1 && (
+                <ArrowRight className="absolute -right-[1.15rem] top-1/2 hidden h-5 w-5 -translate-y-1/2 text-emerald/70 lg:block" />
+              )}
+            </div>
+          </Reveal>
+        ))}
       </div>
     </Section>
   );
@@ -156,41 +175,69 @@ export function R5Framework() {
         eyebrow="R5 Framework"
         title="Recycle is the"
         gradientTail="last resort."
-        subtitle="Every stage below preserves less value than the one above it. ReLife AI always searches upward first."
+        subtitle="The engine always searches upward first. Each tier below preserves less of the product's original value than the one above it."
       />
 
-      <div className="mt-14 grid gap-4">
-        {r5.map((r, i) => (
-          <Reveal key={r.code} delay={i * 0.06}>
-            <div className="card-surface lift grid items-center gap-5 p-6 md:grid-cols-[auto_1fr_14rem]">
-              <div className="flex items-center gap-4">
-                <span className="grid h-12 w-12 place-items-center rounded-2xl border border-emerald/40">
-                  <r.icon className="h-5 w-5 text-emerald" />
-                </span>
-                <div>
-                  <p className="font-mono text-xs tracking-[0.2em] text-electric">{r.code}</p>
-                  <h3 className="font-display text-xl font-semibold">{r.name}</h3>
+      <div className="mt-14 grid gap-6 lg:grid-cols-[auto_1fr]">
+        <div className="hidden shrink-0 flex-col items-center justify-between py-2 lg:flex">
+          <span className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-emerald">
+            Most value
+          </span>
+          <span className="my-3 w-px flex-1 bg-gradient-to-b from-emerald via-electric to-muted" />
+          <span className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">
+            Last resort
+          </span>
+        </div>
+
+        <div className="grid gap-3">
+          {r5.map((r, i) => (
+            <Reveal key={r.code} delay={i * 0.06}>
+              <div className="card-surface lift relative overflow-hidden p-5 sm:p-6">
+                <motion.span
+                  aria-hidden
+                  initial={{ width: 0 }}
+                  whileInView={{ width: `${r.value}%` }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.9, delay: 0.1 }}
+                  className="absolute inset-y-0 left-0 bg-gradient-brand opacity-[0.09]"
+                />
+                <div className="relative grid items-center gap-4 sm:grid-cols-[auto_1fr_auto]">
+                  <div className="flex items-center gap-4">
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-emerald/40">
+                      <r.icon className="h-5 w-5 text-emerald" />
+                    </span>
+                    <div className="sm:w-36">
+                      <p className="font-mono text-[0.65rem] tracking-[0.22em] text-electric">
+                        TIER {r.code}
+                      </p>
+                      <h3 className="font-display text-lg font-semibold leading-tight">{r.name}</h3>
+                    </div>
+                  </div>
+                  <p className="text-sm leading-relaxed text-muted-foreground">{r.body}</p>
+                  <div className="sm:w-40">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
+                        Value kept
+                      </span>
+                      <span className="font-mono text-sm text-foreground">{r.value}%</span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        whileInView={{ width: `${r.value}%` }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.9, delay: 0.2 }}
+                        className="h-full bg-gradient-brand"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <p className="text-sm text-muted-foreground">{r.body}</p>
-              <div>
-                <p className="mb-2 text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">
-                  Value preserved
-                </p>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    whileInView={{ width: `${r.value}%` }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 1, delay: 0.2 }}
-                    className="h-full bg-gradient-brand"
-                  />
-                </div>
-              </div>
-            </div>
-          </Reveal>
-        ))}
+            </Reveal>
+          ))}
+        </div>
       </div>
     </Section>
   );
+
 }
