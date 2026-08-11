@@ -1,6 +1,8 @@
 import { motion } from "framer-motion";
 import {
+  ArrowRight,
   Boxes,
+
   BrainCircuit,
   Camera,
   ClipboardCheck,
