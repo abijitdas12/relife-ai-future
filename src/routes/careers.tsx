@@ -291,6 +291,7 @@ function CareersPage() {
 }
 
 function ApplyDialog({ job, onClose }: { job: Job; onClose: () => void }) {
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -300,14 +301,31 @@ function ApplyDialog({ job, onClose }: { job: Job; onClose: () => void }) {
     skills: "",
   });
 
-  const submit = () => {
+  const submit = async () => {
     if (form.name.trim().length < 2 || !/^[6-9]\d{9}$/.test(form.phone.trim())) {
       toast.error("Enter your name and a valid 10-digit mobile number.");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from("job_applications").insert({
+      job_title: job.title,
+      track: job.track,
+      applicant_name: form.name.trim(),
+      phone: form.phone.trim(),
+      email: form.email.trim() || null,
+      city: form.city.trim() || null,
+      experience: form.experience,
+      skills: form.skills.trim() || null,
+    });
+    setSaving(false);
+    if (error) {
+      toast.error("Could not submit your application. Please try again.");
       return;
     }
     toast.success(`Application received for ${job.title}. Our team will call you for a skill check.`);
     onClose();
   };
+
 
   return (
     <div className="fixed inset-0 z-[60] grid place-items-center p-4">
