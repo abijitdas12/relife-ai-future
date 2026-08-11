@@ -256,7 +256,7 @@ function CareersPage() {
             </p>
           )}
           <p className="mt-8 text-xs text-muted-foreground">
-            Prototype careers board — openings are illustrative and applications are not stored.
+            Openings are illustrative for now, but every application is recorded and reviewed.
           </p>
         </Section>
 
