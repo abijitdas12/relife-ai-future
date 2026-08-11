@@ -14,7 +14,114 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      job_applications: {
+        Row: {
+          applicant_name: string
+          city: string | null
+          created_at: string
+          email: string | null
+          experience: string
+          id: string
+          job_title: string
+          phone: string
+          skills: string | null
+          status: string
+          track: string
+        }
+        Insert: {
+          applicant_name: string
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          experience: string
+          id?: string
+          job_title: string
+          phone: string
+          skills?: string | null
+          status?: string
+          track: string
+        }
+        Update: {
+          applicant_name?: string
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          experience?: string
+          id?: string
+          job_title?: string
+          phone?: string
+          skills?: string | null
+          status?: string
+          track?: string
+        }
+        Relationships: []
+      }
+      pickup_requests: {
+        Row: {
+          address_line: string
+          amount_paid_now: number
+          city: string
+          created_at: string
+          customer_name: string
+          device: string
+          estimated_total: number
+          faults: string[]
+          id: string
+          landmark: string | null
+          notes: string | null
+          payment_method: string
+          payment_mode: string
+          phone: string
+          pincode: string
+          reference: string
+          slot: string
+          status: string
+          urgency: string
+        }
+        Insert: {
+          address_line: string
+          amount_paid_now?: number
+          city: string
+          created_at?: string
+          customer_name: string
+          device: string
+          estimated_total: number
+          faults?: string[]
+          id?: string
+          landmark?: string | null
+          notes?: string | null
+          payment_method: string
+          payment_mode: string
+          phone: string
+          pincode: string
+          reference: string
+          slot: string
+          status?: string
+          urgency: string
+        }
+        Update: {
+          address_line?: string
+          amount_paid_now?: number
+          city?: string
+          created_at?: string
+          customer_name?: string
+          device?: string
+          estimated_total?: number
+          faults?: string[]
+          id?: string
+          landmark?: string | null
+          notes?: string | null
+          payment_method?: string
+          payment_mode?: string
+          phone?: string
+          pincode?: string
+          reference?: string
+          slot?: string
+          status?: string
+          urgency?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
