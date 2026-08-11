@@ -461,7 +461,9 @@ export function PickupFlow() {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Prototype checkout — no real payment is processed and no card details are collected.
+                Your booking is saved to ReLife. No card details are collected — payment is settled
+                at pickup or via the link we send you.
+
               </p>
             </div>
           )}
