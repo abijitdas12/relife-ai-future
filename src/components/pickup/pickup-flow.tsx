@@ -503,12 +503,15 @@ export function PickupFlow() {
                   <ArrowLeft className="h-4 w-4" /> Back
                 </Button>
               )}
-              <Button variant="hero" size="lg" onClick={next}>
-                {step === 2
-                  ? "Approve estimate"
-                  : step === 3
-                    ? `Pay ${inr(payable)}`
-                    : "Continue"}{" "}
+              <Button variant="hero" size="lg" onClick={next} disabled={saving}>
+                {saving
+                  ? "Booking…"
+                  : step === 2
+                    ? "Approve estimate"
+                    : step === 3
+                      ? `Pay ${inr(payable)}`
+                      : "Continue"}{" "}
+
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
