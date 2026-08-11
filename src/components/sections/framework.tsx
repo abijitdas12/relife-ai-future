@@ -33,43 +33,44 @@ const pillars = [
   },
 ];
 
-const steps = [
-  { n: "01", title: "Scan", icon: Camera, body: "The user uploads a photo or uses the live camera." },
+const phases = [
   {
-    n: "02",
-    title: "Identify",
-    icon: Eye,
-    body: "AI identifies product type, brand, model and visible damage.",
+    id: "P1",
+    label: "Capture & Identify",
+    hint: "Seconds · on the customer's phone",
+    steps: [
+      { n: "01", title: "Scan", icon: Camera, body: "Photo upload or live camera capture of the damaged product." },
+      { n: "02", title: "Identify", icon: Eye, body: "AI reads product type, brand, model and visible damage." },
+    ],
   },
   {
-    n: "03",
-    title: "Analyze",
-    icon: BrainCircuit,
-    body: "Symptoms are combined with age, repair cost, replacement cost, component condition and estimated remaining life.",
+    id: "P2",
+    label: "Decide",
+    hint: "Instant · ReLife Decision Engine",
+    steps: [
+      {
+        n: "03",
+        title: "Analyze",
+        icon: BrainCircuit,
+        body: "Age, repair cost, replacement cost, component condition and remaining life are combined.",
+      },
+      { n: "04", title: "Score", icon: Gauge, body: "The RDE returns a Repairability Score from 0 to 100." },
+      { n: "05", title: "R5 Decision", icon: Sparkles, body: "Reduce, Reuse, Retrieve, Redesign or Recycle is selected." },
+    ],
   },
   {
-    n: "04",
-    title: "RDE",
-    icon: Gauge,
-    body: "The ReLife Decision Engine calculates a Repairability Score from 0 to 100.",
-  },
-  {
-    n: "05",
-    title: "R5 Decision",
-    icon: Sparkles,
-    body: "The system recommends Repair, Reuse, Retrieve, Redesign or Recycle.",
-  },
-  {
-    n: "06",
-    title: "Skill Center",
-    icon: Factory,
-    body: "Repairable cases route to the nearest ReLife Skill Center.",
-  },
-  {
-    n: "07",
-    title: "Product ReLife",
-    icon: Wrench,
-    body: "A trained worker repairs, refurbishes, retrieves components or recycles what remains.",
+    id: "P3",
+    label: "ReLife",
+    hint: "Days · Skill Center bench",
+    steps: [
+      { n: "06", title: "Route", icon: Factory, body: "The job is assigned to the nearest ReLife Skill Center." },
+      {
+        n: "07",
+        title: "Product ReLife",
+        icon: Wrench,
+        body: "A trained technician repairs, refurbishes, retrieves parts or recycles the remainder.",
+      },
+    ],
   },
 ];
 
@@ -80,6 +81,7 @@ const r5 = [
   { code: "R4", name: "REDESIGN", body: "Convert recovered parts into useful products.", icon: Wrench, value: 42 },
   { code: "R5", name: "RECYCLE", body: "Recycle only what cannot be reused.", icon: Recycle, value: 20 },
 ];
+
 
 export function WhatIs() {
   return (
