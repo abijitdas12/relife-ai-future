@@ -421,11 +421,12 @@ function ApplyDialog({ job, onClose }: { job: Job; onClose: () => void }) {
               placeholder="Fans and mixers, basic soldering, laptop RAM/SSD swaps…"
             />
           </Row>
-          <Button variant="hero" size="lg" onClick={submit}>
-            Submit application <Send className="h-4 w-4" />
+          <Button variant="hero" size="lg" onClick={submit} disabled={saving}>
+            {saving ? "Submitting…" : "Submit application"} <Send className="h-4 w-4" />
           </Button>
           <p className="text-xs text-muted-foreground">
-            Prototype form — nothing is submitted or stored yet.
+            Your application is sent to the ReLife hiring team — we only use it to contact you.
+
           </p>
         </div>
       </motion.div>
