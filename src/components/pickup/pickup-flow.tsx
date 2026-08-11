@@ -62,6 +62,9 @@ export function PickupFlow() {
   const [urgency, setUrgency] = useState<UrgencyKey>("standard");
   const [method, setMethod] = useState<PaymentId>("upi");
   const [payMode, setPayMode] = useState<PayMode>("advance");
+  const [saving, setSaving] = useState(false);
+  const [reference, setReference] = useState("");
+
 
   const device = DEVICES.find((d) => d.key === deviceKey)!;
   const quote = useMemo(
