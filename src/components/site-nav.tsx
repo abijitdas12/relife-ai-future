@@ -74,7 +74,7 @@ export function SiteNav() {
             type="button"
             aria-label="Toggle menu"
             onClick={() => setOpen((o) => !o)}
-            className="grid h-9 w-9 place-items-center rounded-full border border-border lg:hidden"
+            className="grid h-9 w-9 place-items-center rounded-full border border-border xl:hidden"
           >
             {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
@@ -82,7 +82,7 @@ export function SiteNav() {
       </nav>
 
       {open && (
-        <div className="glass mx-auto mt-2 max-w-7xl animate-fade-in rounded-2xl p-3 lg:hidden">
+        <div className="glass mx-auto mt-2 max-w-7xl animate-fade-in rounded-2xl p-3 xl:hidden">
           <ul className="grid gap-1">
             {links.map((l) => (
               <li key={l.label}>
