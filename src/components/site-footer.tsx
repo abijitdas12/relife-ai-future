@@ -2,12 +2,12 @@ import { Link } from "@tanstack/react-router";
 import { Github, Instagram, Linkedin, Twitter, Youtube } from "lucide-react";
 import { BrandLockup } from "./brand";
 
-const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/skill-centers" | "/dashboard" | "/signin"; hash?: string }[] }[] = [
+const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/signin"; hash?: string }[] }[] = [
   {
     title: "Product",
     links: [
       { label: "Scan Product", to: "/scan" },
-      { label: "AI Dashboard", to: "/dashboard" },
+      { label: "Pickup", to: "/", hash: "pickup" },
       { label: "Sign In", to: "/signin" },
     ],
   },
@@ -22,9 +22,9 @@ const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/sk
   {
     title: "Network",
     links: [
-      { label: "Skill Centers", to: "/skill-centers" },
-      { label: "Impact", to: "/dashboard" },
-      { label: "About", to: "/", hash: "about" },
+      { label: "Skill Centers", to: "/", hash: "skill-centers" },
+      { label: "Careers", to: "/", hash: "careers" },
+      { label: "Impact", to: "/", hash: "impact" },
     ],
   },
 ];

@@ -10,6 +10,8 @@ import {
   NationalNetwork,
   SkillCentersSection,
 } from "@/components/sections/network";
+import { PickupSection } from "@/components/sections/pickup-section";
+import { CareersSection } from "@/components/sections/careers-section";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -45,6 +47,8 @@ function Landing() {
         <SkillCentersSection />
         <NationalNetwork />
         <BusinessModel />
+        <PickupSection />
+        <CareersSection />
         <ImpactDashboard />
       </main>
       <SiteFooter />
