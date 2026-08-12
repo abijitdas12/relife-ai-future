@@ -49,7 +49,7 @@ export function SiteNav() {
             <li key={l.label} className="shrink-0">
               <Link
                 to={l.to}
-                hash={l.hash}
+                {...(l.hash ? { hash: l.hash } : {})}
                 className="block whitespace-nowrap rounded-full px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {l.label}
