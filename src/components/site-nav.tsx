@@ -45,19 +45,20 @@ export function SiteNav() {
           <BrandMark />
         </Link>
 
-        <ul className="hidden items-center gap-1 lg:flex">
+        <ul className="hidden flex-nowrap items-center gap-0.5 xl:flex">
           {links.map((l) => (
-            <li key={l.label}>
+            <li key={l.label} className="shrink-0">
               <Link
                 to={l.to}
                 {...(l.hash ? { hash: l.hash } : {})}
-                className="rounded-full px-3.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="block whitespace-nowrap rounded-full px-3 py-2 text-sm leading-none text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {l.label}
               </Link>
             </li>
           ))}
         </ul>
+
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
