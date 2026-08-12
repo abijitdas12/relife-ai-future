@@ -8,19 +8,18 @@ import { cn } from "@/lib/utils";
 
 type NavLink = {
   label: string;
-  to: "/" | "/skill-centers" | "/dashboard" | "/pickup" | "/careers";
+  to: "/";
   hash?: string;
 };
 
 const links: NavLink[] = [
   { label: "How It Works", to: "/", hash: "how-it-works" },
   { label: "R5 Framework", to: "/", hash: "r5" },
-  { label: "Pickup", to: "/pickup" },
-  { label: "Skill Centers", to: "/skill-centers" },
-  { label: "Careers", to: "/careers" },
-  { label: "Impact", to: "/dashboard" },
+  { label: "Pickup", to: "/", hash: "pickup" },
+  { label: "Skill Centers", to: "/", hash: "skill-centers" },
+  { label: "Careers", to: "/", hash: "careers" },
+  { label: "Impact", to: "/", hash: "impact" },
 ];
-
 
 export function SiteNav() {
   const [open, setOpen] = useState(false);
@@ -45,20 +44,19 @@ export function SiteNav() {
           <BrandMark />
         </Link>
 
-        <ul className="hidden flex-nowrap items-center gap-0.5 xl:flex">
+        <ul className="hidden items-center gap-2 lg:flex">
           {links.map((l) => (
             <li key={l.label} className="shrink-0">
               <Link
                 to={l.to}
                 {...(l.hash ? { hash: l.hash } : {})}
-                className="block whitespace-nowrap rounded-full px-3 py-2 text-sm leading-none text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="block whitespace-nowrap rounded-full px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {l.label}
               </Link>
             </li>
           ))}
         </ul>
-
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
@@ -74,7 +72,7 @@ export function SiteNav() {
             type="button"
             aria-label="Toggle menu"
             onClick={() => setOpen((o) => !o)}
-            className="grid h-9 w-9 place-items-center rounded-full border border-border xl:hidden"
+            className="grid h-9 w-9 place-items-center rounded-full border border-border lg:hidden"
           >
             {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
@@ -82,7 +80,7 @@ export function SiteNav() {
       </nav>
 
       {open && (
-        <div className="glass mx-auto mt-2 max-w-7xl animate-fade-in rounded-2xl p-3 xl:hidden">
+        <div className="glass mx-auto mt-2 max-w-7xl animate-fade-in rounded-2xl p-3 lg:hidden">
           <ul className="grid gap-1">
             {links.map((l) => (
               <li key={l.label}>
