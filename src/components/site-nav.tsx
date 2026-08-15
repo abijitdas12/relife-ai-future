@@ -52,7 +52,7 @@ export function SiteNav() {
               <Link
                 to={l.to}
                 {...(l.hash ? { hash: l.hash } : {})}
-                className="block whitespace-nowrap rounded-full px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="block whitespace-nowrap rounded-full px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {l.label}
               </Link>
