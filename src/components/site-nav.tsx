@@ -12,11 +12,13 @@ type NavLink = {
   hash?: string;
 };
 
+// Ordered to match the exact top-to-bottom order of sections on the homepage.
 const links: NavLink[] = [
   { label: "How It Works", to: "/", hash: "how-it-works" },
   { label: "R5 Framework", to: "/", hash: "r5" },
-  { label: "Pickup", to: "/", hash: "pickup" },
+  { label: "RDE Engine", to: "/", hash: "rde" },
   { label: "Skill Centers", to: "/", hash: "skill-centers" },
+  { label: "Pickup", to: "/", hash: "pickup" },
   { label: "Careers", to: "/", hash: "careers" },
   { label: "Impact", to: "/", hash: "impact" },
 ];
