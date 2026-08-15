@@ -2,20 +2,15 @@ import { Link } from "@tanstack/react-router";
 import { Github, Instagram, Linkedin, Twitter, Youtube } from "lucide-react";
 import { BrandLockup } from "./brand";
 
+// Columns follow the same order the sections appear on the homepage.
 const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/signin"; hash?: string }[] }[] = [
-  {
-    title: "Product",
-    links: [
-      { label: "Scan Product", to: "/scan" },
-      { label: "Pickup", to: "/", hash: "pickup" },
-      { label: "Sign In", to: "/signin" },
-    ],
-  },
   {
     title: "Platform",
     links: [
+      { label: "What Is ReLife AI", to: "/", hash: "about" },
       { label: "How It Works", to: "/", hash: "how-it-works" },
       { label: "R5 Framework", to: "/", hash: "r5" },
+      { label: "AI Detection", to: "/", hash: "detection" },
       { label: "RDE Engine", to: "/", hash: "rde" },
     ],
   },
@@ -23,8 +18,18 @@ const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/si
     title: "Network",
     links: [
       { label: "Skill Centers", to: "/", hash: "skill-centers" },
-      { label: "Careers", to: "/", hash: "careers" },
+      { label: "National Network", to: "/", hash: "network" },
+      { label: "Business Model", to: "/", hash: "business" },
       { label: "Impact", to: "/", hash: "impact" },
+    ],
+  },
+  {
+    title: "Get Started",
+    links: [
+      { label: "Scan Product", to: "/scan" },
+      { label: "Book a Pickup", to: "/", hash: "pickup" },
+      { label: "Careers", to: "/", hash: "careers" },
+      { label: "Sign In", to: "/signin" },
     ],
   },
 ];
