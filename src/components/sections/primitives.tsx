@@ -76,10 +76,7 @@ export function Section({
   return (
     <section
       id={id}
-      className={cn(
-        "relative mx-auto w-full max-w-7xl scroll-mt-24 px-5 py-24 md:py-32",
-        className,
-      )}
+      className={cn("relative mx-auto w-full max-w-7xl px-5 py-24 md:py-32", className)}
     >
       {children}
     </section>

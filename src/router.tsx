@@ -10,6 +10,9 @@ export const getRouter = () => {
     context: { queryClient },
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
+    // Every hash link (nav, footer, in-page) scrolls the same smooth way and
+    // stops just below the sticky header thanks to scroll-margin-top in CSS.
+    defaultHashScrollIntoView: { behavior: "smooth", block: "start" },
   });
 
   return router;
