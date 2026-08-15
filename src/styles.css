@@ -168,8 +168,31 @@
     border-color: var(--color-border);
   }
 
+  :root {
+    /* Sticky header height + breathing room; anchors stop right below it. */
+    --header-offset: 5.25rem;
+  }
+
+  @media (min-width: 640px) {
+    :root {
+      --header-offset: 5.75rem;
+    }
+  }
+
   html {
     scroll-behavior: smooth;
+    scroll-padding-top: var(--header-offset);
+  }
+
+  /* Every anchor target lands below the sticky header on every screen size. */
+  [id] {
+    scroll-margin-top: var(--header-offset);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
   }
 
   body {
