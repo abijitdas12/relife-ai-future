@@ -46,7 +46,7 @@ export function SiteNav() {
           <BrandMark />
         </Link>
 
-        <ul className="hidden items-center gap-2 lg:flex">
+        <ul className="hidden items-center gap-1 lg:flex">
           {links.map((l) => (
             <li key={l.label} className="shrink-0">
               <Link
