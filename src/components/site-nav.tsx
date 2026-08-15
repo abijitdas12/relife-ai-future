@@ -12,11 +12,13 @@ type NavLink = {
   hash?: string;
 };
 
+// Ordered to match the exact top-to-bottom order of sections on the homepage.
 const links: NavLink[] = [
   { label: "How It Works", to: "/", hash: "how-it-works" },
   { label: "R5 Framework", to: "/", hash: "r5" },
-  { label: "Pickup", to: "/", hash: "pickup" },
+  { label: "RDE Engine", to: "/", hash: "rde" },
   { label: "Skill Centers", to: "/", hash: "skill-centers" },
+  { label: "Pickup", to: "/", hash: "pickup" },
   { label: "Careers", to: "/", hash: "careers" },
   { label: "Impact", to: "/", hash: "impact" },
 ];
@@ -44,13 +46,13 @@ export function SiteNav() {
           <BrandMark />
         </Link>
 
-        <ul className="hidden items-center gap-2 lg:flex">
+        <ul className="hidden items-center gap-1 lg:flex">
           {links.map((l) => (
             <li key={l.label} className="shrink-0">
               <Link
                 to={l.to}
                 {...(l.hash ? { hash: l.hash } : {})}
-                className="block whitespace-nowrap rounded-full px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="block whitespace-nowrap rounded-full px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {l.label}
               </Link>
