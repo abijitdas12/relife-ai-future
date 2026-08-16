@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   ArrowRight,
   Camera,
   CheckCircle2,
@@ -15,75 +16,107 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Eyebrow, Section } from "@/components/sections/primitives";
 import { runRde, type RdeResult } from "@/lib/rde";
+import { analyzeProductImage, type VisionAnalysis } from "@/lib/vision.functions";
 import { cn } from "@/lib/utils";
 
 const STAGES = [
   "Uploading image",
-  "AI Vision",
+  "Gemini Vision",
   "Product detection",
   "Fault analysis",
   "RDE scoring",
   "R5 recommendation",
 ];
 
-const componentPlan = [
-  { part: "Battery", action: "Replace" },
-  { part: "RAM", action: "Reuse" },
-  { part: "SSD", action: "Retrieve / Reuse" },
-  { part: "Display", action: "Reuse" },
-  { part: "Motherboard", action: "Inspect" },
-];
+const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+
+function readAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read that file."));
+    reader.readAsDataURL(file);
+  });
+}
 
 export function ScanFlow() {
   const [preview, setPreview] = useState<string | null>(null);
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [stage, setStage] = useState(-1);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<VisionAnalysis | null>(null);
   const [result, setResult] = useState<RdeResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  const analyze = useCallback(() => {
+  const analyze = useCallback(async (image: string) => {
     setResult(null);
+    setAnalysis(null);
+    setError(null);
+    setBusy(true);
     setStage(0);
+
     timers.current.forEach(clearTimeout);
-    timers.current = STAGES.map((_, i) =>
-      setTimeout(() => {
-        setStage(i);
-        if (i === STAGES.length - 1) {
-          setResult(
-            runRde({
-              repairCost: 3200,
-              replacementCost: 48000,
-              ageYears: 3,
-              repairability: 88,
-              componentAvailability: 0.8,
-              remainingLife: 3,
-              componentValue: 0.7,
-            }),
-          );
-        }
-      }, 700 * (i + 1)),
-    );
+    timers.current = [1, 2, 3].map((i) => setTimeout(() => setStage(i), 900 * i));
+
+    try {
+      const vision = await analyzeProductImage({ data: { image } });
+      timers.current.forEach(clearTimeout);
+      setAnalysis(vision);
+      setStage(4);
+      const rde = runRde({
+        repairCost: vision.repairCostInr,
+        replacementCost: vision.replacementCostInr,
+        ageYears: vision.ageYearsEstimate,
+        repairability: vision.repairability,
+        componentAvailability: vision.componentAvailability,
+        remainingLife: vision.remainingLifeYears,
+        componentValue: vision.componentValue,
+      });
+      timers.current = [
+        setTimeout(() => {
+          setStage(5);
+          setResult(rde);
+        }, 600),
+      ];
+    } catch (e) {
+      timers.current.forEach(clearTimeout);
+      setStage(-1);
+      setError(e instanceof Error ? e.message : "Analysis failed. Please try again.");
+    } finally {
+      setBusy(false);
+    }
   }, []);
 
-  const onFile = (file: File | undefined) => {
+  const onFile = async (file: File | undefined) => {
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    analyze();
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("Image is larger than 8MB — please use a smaller photo.");
+      return;
+    }
+    setPreview(URL.createObjectURL(file));
+    const url = await readAsDataUrl(file);
+    setDataUrl(url);
+    void analyze(url);
   };
 
   return (
     <Section className="pt-6">
       <div className="flex flex-col items-center gap-4 text-center">
-        <Eyebrow>AI Vision × RDE × R5</Eyebrow>
+        <Eyebrow>Gemini Vision × RDE × R5</Eyebrow>
         <h1 className="text-4xl font-semibold sm:text-5xl md:text-6xl">
           Scan Your <span className="text-gradient">Product</span>
         </h1>
         <p className="max-w-xl text-muted-foreground">
-          Upload a photo of your broken product. ReLife AI identifies it, analyses the fault and
-          returns an R5 decision in seconds.
+          Upload a photo of your broken product. Gemini Vision identifies it, ReLife AI analyses the
+          fault and returns an R5 decision in seconds.
         </p>
       </div>
 
@@ -95,7 +128,7 @@ export function ScanFlow() {
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
-              onFile(e.dataTransfer.files[0]);
+              void onFile(e.dataTransfer.files[0]);
             }}
             className="relative grid min-h-[22rem] place-items-center overflow-hidden rounded-2xl border border-dashed border-border p-6 text-center"
           >
@@ -106,7 +139,7 @@ export function ScanFlow() {
                   alt="Uploaded product awaiting AI analysis"
                   className="mx-auto max-h-72 w-auto rounded-xl object-contain"
                 />
-                <BoundingBoxes />
+                {busy && <ScanOverlay />}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-4">
@@ -118,8 +151,8 @@ export function ScanFlow() {
                   Upload a photo of your broken product
                 </p>
                 <p className="max-w-sm text-sm text-muted-foreground">
-                  Drag and drop, choose a file, or use your camera. Images stay on your device in
-                  this prototype.
+                  Drag and drop, choose a file, or use your camera. The photo is sent once to Gemini
+                  Vision for identification and never stored.
                 </p>
               </div>
             )}
@@ -130,16 +163,22 @@ export function ScanFlow() {
             type="file"
             accept="image/*"
             className="hidden"
-            onChange={(e) => onFile(e.target.files?.[0])}
+            onChange={(e) => void onFile(e.target.files?.[0])}
           />
 
           <div className="relative mt-6 flex flex-wrap gap-3">
-            <Button variant="hero" size="lg" onClick={() => inputRef.current?.click()}>
+            <Button
+              variant="hero"
+              size="lg"
+              disabled={busy}
+              onClick={() => inputRef.current?.click()}
+            >
               <Upload className="h-4 w-4" /> Upload Image
             </Button>
             <Button
               variant="glass"
               size="lg"
+              disabled={busy}
               onClick={() => {
                 if (inputRef.current) {
                   inputRef.current.setAttribute("capture", "environment");
@@ -149,23 +188,31 @@ export function ScanFlow() {
             >
               <Camera className="h-4 w-4" /> Use Camera
             </Button>
-            {preview && (
-              <Button variant="ghost" size="lg" onClick={analyze}>
-                <RefreshCw className="h-4 w-4" /> Re-analyze
+            {dataUrl && (
+              <Button
+                variant="ghost"
+                size="lg"
+                disabled={busy}
+                onClick={() => void analyze(dataUrl)}
+              >
+                <RefreshCw className={cn("h-4 w-4", busy && "animate-spin")} /> Re-analyze
               </Button>
             )}
           </div>
+
+          {error && (
+            <p className="relative mt-4 flex items-start gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-lime" />
+              {error}
+            </p>
+          )}
         </div>
 
         {/* Pipeline */}
         <div className="card-surface p-6">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Cpu className="h-4 w-4 text-electric" />
-            {stage < 0
-              ? "Pipeline idle"
-              : result
-                ? "Analysis complete"
-                : "Analyzing product..."}
+            {stage < 0 ? "Pipeline idle" : result ? "Analysis complete" : "Analyzing product..."}
           </div>
 
           <ol className="mt-6 grid gap-3">
@@ -188,9 +235,7 @@ export function ScanFlow() {
                   ) : (
                     <span className="h-4 w-4 rounded-full border border-border" />
                   )}
-                  <span className="font-mono text-xs text-muted-foreground">
-                    0{i + 1}
-                  </span>
+                  <span className="font-mono text-xs text-muted-foreground">0{i + 1}</span>
                   {s}
                 </li>
               );
@@ -204,40 +249,37 @@ export function ScanFlow() {
               transition={{ duration: 0.5 }}
             />
           </div>
+
+          {analysis && (
+            <div className="mt-6 grid gap-2 rounded-2xl border border-border p-4 text-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Vision output
+              </p>
+              <p className="font-display text-lg font-semibold">{analysis.product}</p>
+              <p className="text-muted-foreground">
+                {analysis.brandGuess} · {analysis.category} · {analysis.condition}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
-      {result && <ResultCard result={result} />}
+      {result && analysis && <ResultCard result={result} analysis={analysis} />}
     </Section>
   );
 }
 
-function BoundingBoxes() {
+function ScanOverlay() {
   return (
     <div className="pointer-events-none absolute inset-0">
-      {[
-        { top: "18%", left: "14%", w: "38%", h: "48%", label: "chassis" },
-        { top: "48%", left: "58%", w: "28%", h: "30%", label: "battery" },
-      ].map((b) => (
-        <motion.div
-          key={b.label}
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6 }}
-          className="absolute rounded-lg border border-emerald"
-          style={{ top: b.top, left: b.left, width: b.w, height: b.h }}
-        >
-          <span className="absolute -top-6 left-0 rounded-md bg-gradient-brand px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider text-primary-foreground">
-            {b.label}
-          </span>
-        </motion.div>
-      ))}
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-brand animate-scanline" />
+      <div className="absolute inset-0 rounded-xl border border-emerald/40" />
     </div>
   );
 }
 
-function ResultCard({ result }: { result: RdeResult }) {
+function ResultCard({ result, analysis }: { result: RdeResult; analysis: VisionAnalysis }) {
+  const saved = Math.max(0, analysis.replacementCostInr - analysis.repairCostInr);
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
@@ -254,12 +296,14 @@ function ResultCard({ result }: { result: RdeResult }) {
           <p className="mt-2 text-sm text-muted-foreground">{result.headline}</p>
 
           <dl className="mt-6 grid gap-4 sm:grid-cols-2">
-            <Stat label="Product" value="Laptop" />
-            <Stat label="Detected condition" value="Battery degradation" />
+            <Stat label="Product" value={analysis.product} />
+            <Stat label="Detected condition" value={analysis.condition} />
             <Stat label="Repairability" value={`${result.score} / 100`} />
             <Stat label="Repair vs replace" value={`${Math.round(result.costRatio * 100)}%`} />
-            <Stat label="Estimated money saved" value="₹44,800" />
-            <Stat label="Life extension" value="3 years" />
+            <Stat label="Estimated repair" value={inr(analysis.repairCostInr)} />
+            <Stat label="Estimated money saved" value={inr(saved)} />
+            <Stat label="Life extension" value={`${analysis.remainingLifeYears} years`} />
+            <Stat label="Estimated age" value={`${analysis.ageYearsEstimate} years`} />
           </dl>
 
           <div className="mt-6 rounded-2xl border border-border p-4">
@@ -267,7 +311,7 @@ function ResultCard({ result }: { result: RdeResult }) {
               <Sparkles className="h-3.5 w-3.5 text-lime" /> Why?
             </p>
             <ul className="mt-3 grid gap-2 text-sm text-muted-foreground">
-              {result.reasoning.map((r) => (
+              {[...result.reasoning, ...(analysis.notes ? [analysis.notes] : [])].map((r) => (
                 <li key={r} className="flex gap-2">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-brand" />
                   {r}
@@ -283,24 +327,45 @@ function ResultCard({ result }: { result: RdeResult }) {
           </Button>
         </div>
 
-        <div className="rounded-2xl border border-border p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Component plan
-          </p>
-          <ul className="mt-4 grid gap-2">
-            {componentPlan.map((c) => (
-              <li
-                key={c.part}
-                className="flex items-center justify-between rounded-xl border border-border px-4 py-3 text-sm"
-              >
-                <span className="font-medium">{c.part}</span>
-                <span className="text-emerald">{c.action}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-5 rounded-xl border border-border p-4 text-sm text-muted-foreground">
-            <p>Waste avoided: 94% of unit mass</p>
-            <p className="mt-1">Prototype estimate — not verified field data.</p>
+        <div className="grid content-start gap-5">
+          {analysis.faults.length > 0 && (
+            <div className="rounded-2xl border border-border p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Detected faults
+              </p>
+              <ul className="mt-4 grid gap-2 text-sm">
+                {analysis.faults.map((f) => (
+                  <li key={f} className="flex gap-2 text-muted-foreground">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-brand" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {analysis.detectedComponents.length > 0 && (
+            <div className="rounded-2xl border border-border p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Component plan
+              </p>
+              <ul className="mt-4 grid gap-2">
+                {analysis.detectedComponents.map((c) => (
+                  <li
+                    key={c.name}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-sm"
+                  >
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-right text-emerald">{c.state}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-border p-4 text-sm text-muted-foreground">
+            <p>Estimates generated by Gemini Vision from a single photo.</p>
+            <p className="mt-1">A Skill Center bench test confirms the final quote.</p>
           </div>
         </div>
       </div>
