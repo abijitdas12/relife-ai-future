@@ -153,6 +153,7 @@ export function ScanFlow() {
       setError("Image is larger than 8MB — please use a smaller photo.");
       return;
     }
+    stopCamera();
     setPreview(URL.createObjectURL(file));
     const url = await readAsDataUrl(file);
     setDataUrl(url);
