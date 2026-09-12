@@ -49,8 +49,60 @@ export function ScanFlow() {
   const [result, setResult] = useState<RdeResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  useEffect(
+    () => () => {
+      timers.current.forEach(clearTimeout);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    },
+    [],
+  );
+
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setCameraOpen(false);
+  }, []);
+
+  const openCamera = useCallback(async () => {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play().catch(() => undefined);
+        }
+      });
+    } catch {
+      setError(
+        "Camera is unavailable or permission was denied. Please allow camera access or use Upload Image instead.",
+      );
+    }
+  }, []);
+
+  const capturePhoto = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    const url = canvas.toDataURL("image/jpeg", 0.9);
+    stopCamera();
+    setPreview(url);
+    setDataUrl(url);
+    void analyze(url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopCamera]);
 
   const analyze = useCallback(async (image: string) => {
     setResult(null);
@@ -101,6 +153,7 @@ export function ScanFlow() {
       setError("Image is larger than 8MB — please use a smaller photo.");
       return;
     }
+    stopCamera();
     setPreview(URL.createObjectURL(file));
     const url = await readAsDataUrl(file);
     setDataUrl(url);
@@ -132,7 +185,24 @@ export function ScanFlow() {
             }}
             className="relative grid min-h-[22rem] place-items-center overflow-hidden rounded-2xl border border-dashed border-border p-6 text-center"
           >
-            {preview ? (
+            {cameraOpen ? (
+              <div className="relative w-full">
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  className="mx-auto max-h-72 w-auto rounded-xl object-contain"
+                />
+                <div className="mt-4 flex flex-wrap justify-center gap-3">
+                  <Button variant="hero" size="lg" onClick={capturePhoto}>
+                    <Camera className="h-4 w-4" /> Capture Photo
+                  </Button>
+                  <Button variant="ghost" size="lg" onClick={stopCamera}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : preview ? (
               <div className="relative w-full">
                 <img
                   src={preview}
@@ -178,13 +248,8 @@ export function ScanFlow() {
             <Button
               variant="glass"
               size="lg"
-              disabled={busy}
-              onClick={() => {
-                if (inputRef.current) {
-                  inputRef.current.setAttribute("capture", "environment");
-                  inputRef.current.click();
-                }
-              }}
+              disabled={busy || cameraOpen}
+              onClick={() => void openCamera()}
             >
               <Camera className="h-4 w-4" /> Use Camera
             </Button>
