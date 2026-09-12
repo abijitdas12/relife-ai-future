@@ -49,8 +49,60 @@ export function ScanFlow() {
   const [result, setResult] = useState<RdeResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  useEffect(
+    () => () => {
+      timers.current.forEach(clearTimeout);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    },
+    [],
+  );
+
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setCameraOpen(false);
+  }, []);
+
+  const openCamera = useCallback(async () => {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play().catch(() => undefined);
+        }
+      });
+    } catch {
+      setError(
+        "Camera is unavailable or permission was denied. Please allow camera access or use Upload Image instead.",
+      );
+    }
+  }, []);
+
+  const capturePhoto = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    const url = canvas.toDataURL("image/jpeg", 0.9);
+    stopCamera();
+    setPreview(url);
+    setDataUrl(url);
+    void analyze(url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopCamera]);
 
   const analyze = useCallback(async (image: string) => {
     setResult(null);
