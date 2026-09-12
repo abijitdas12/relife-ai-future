@@ -247,13 +247,8 @@ export function ScanFlow() {
             <Button
               variant="glass"
               size="lg"
-              disabled={busy}
-              onClick={() => {
-                if (inputRef.current) {
-                  inputRef.current.setAttribute("capture", "environment");
-                  inputRef.current.click();
-                }
-              }}
+              disabled={busy || cameraOpen}
+              onClick={() => void openCamera()}
             >
               <Camera className="h-4 w-4" /> Use Camera
             </Button>
