@@ -184,7 +184,24 @@ export function ScanFlow() {
             }}
             className="relative grid min-h-[22rem] place-items-center overflow-hidden rounded-2xl border border-dashed border-border p-6 text-center"
           >
-            {preview ? (
+            {cameraOpen ? (
+              <div className="relative w-full">
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  className="mx-auto max-h-72 w-auto rounded-xl object-contain"
+                />
+                <div className="mt-4 flex flex-wrap justify-center gap-3">
+                  <Button variant="hero" size="lg" onClick={capturePhoto}>
+                    <Camera className="h-4 w-4" /> Capture Photo
+                  </Button>
+                  <Button variant="ghost" size="lg" onClick={stopCamera}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : preview ? (
               <div className="relative w-full">
                 <img
                   src={preview}
