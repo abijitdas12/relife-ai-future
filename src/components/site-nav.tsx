@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Menu, ScanLine, X } from "lucide-react";
+import { Menu, ScanLine, X, User, LogOut, LayoutDashboard } from "lucide-react";
+import { toast } from "sonner";
 import { BrandMark } from "./brand";
 import { ThemeToggle } from "./theme-toggle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 
 type NavLink = {
   label: string;
-  to: "/";
+  to: "/" | "/dashboard";
   hash?: string;
 };
 
@@ -21,11 +23,13 @@ const links: NavLink[] = [
   { label: "Pickup", to: "/", hash: "pickup" },
   { label: "Careers", to: "/", hash: "careers" },
   { label: "Impact", to: "/", hash: "impact" },
+  { label: "Dashboard", to: "/dashboard" },
 ];
 
 export function SiteNav() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { user, signOut } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -33,6 +37,12 @@ export function SiteNav() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  const handleSignOut = async () => {
+    await signOut();
+    toast.success("Signed out successfully");
+    setOpen(false);
+  };
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-5">
@@ -62,14 +72,37 @@ export function SiteNav() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <Link to="/signin">Sign In</Link>
-          </Button>
+          
+          {user ? (
+            <div className="hidden sm:flex items-center gap-2">
+              <Button asChild variant="ghost" size="sm" className="gap-1.5">
+                <Link to="/dashboard">
+                  <LayoutDashboard className="h-3.5 w-3.5 text-emerald" />
+                  <span className="max-w-[120px] truncate">{user.email?.split("@")[0]}</span>
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSignOut}
+                title="Sign Out"
+                className="h-8 w-8 p-0"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+              <Link to="/signin">Sign In</Link>
+            </Button>
+          )}
+
           <Button asChild variant="hero" size="sm">
             <Link to="/scan">
               <ScanLine className="h-4 w-4" /> Scan Product
             </Link>
           </Button>
+
           <button
             type="button"
             aria-label="Toggle menu"
@@ -96,18 +129,32 @@ export function SiteNav() {
                 </Link>
               </li>
             ))}
-            <li>
-              <Link
-                to="/signin"
-                onClick={() => setOpen(false)}
-                className="block rounded-xl px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                Sign In
-              </Link>
-            </li>
+            {user ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm text-destructive hover:bg-destructive/10"
+                >
+                  <span>Sign Out ({user.email})</span>
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </li>
+            ) : (
+              <li>
+                <Link
+                  to="/signin"
+                  onClick={() => setOpen(false)}
+                  className="block rounded-xl px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  Sign In
+                </Link>
+              </li>
+            )}
           </ul>
         </div>
       )}
     </header>
   );
 }
+

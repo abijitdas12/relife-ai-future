@@ -1,20 +1,17 @@
 import { cn } from "@/lib/utils";
-import markAsset from "@/assets/relife-mark.png.asset.json";
-import logoAsset from "@/assets/relife-logo.png.asset.json";
 
 export function R5Logo({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "relative grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-emerald/40",
+        "relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl border border-emerald/40 shadow-sm bg-background",
         className,
       )}
     >
-      <span className="absolute inset-0 rounded-xl bg-gradient-brand opacity-20" />
       <img
-        src={markAsset.url}
+        src="/relife-logo.jpg"
         alt="Re-Life AI logo"
-        className="relative h-[76%] w-[76%] object-contain"
+        className="h-full w-full object-cover"
       />
     </span>
   );
@@ -39,9 +36,9 @@ export function BrandMark() {
 export function BrandLockup({ className }: { className?: string }) {
   return (
     <img
-      src={logoAsset.url}
+      src="/relife-logo.jpg"
       alt="Re-Life AI — Don't Replace It. ReLife It."
-      className={cn("w-56 max-w-full object-contain", className)}
+      className={cn("w-56 max-w-full object-contain rounded-xl shadow-md", className)}
     />
   );
 }
