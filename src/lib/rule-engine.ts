@@ -146,8 +146,15 @@ export async function evaluateRuleEngine(
 ): Promise<RuleEngineResult> {
   const { device, component, condition } = prediction;
 
-  // 1. Confidence Check
+  const isNonDevice =
+    device.name.toLowerCase().includes("non-electronic") ||
+    device.name.toLowerCase().includes("human") ||
+    component.name.toLowerCase().includes("none") ||
+    condition.name.toLowerCase().includes("unrecognized");
+
+  // 1. Confidence & Object Validation Check
   if (
+    isNonDevice ||
     device.confidence < confidenceThreshold ||
     component.confidence < confidenceThreshold ||
     condition.confidence < confidenceThreshold
@@ -155,13 +162,13 @@ export async function evaluateRuleEngine(
     return {
       lowConfidence: true,
       confidenceMessage:
-        "⚠️ We couldn't confidently identify the device, component, or physical condition from this image. Please upload a clearer photo with good lighting showing the component.",
+        "⚠️ No electronic device or component was recognized in this photo. Please upload or capture a clear photo of an electronic device or component (e.g. laptop, smartphone, battery, charger cable, circuit board).",
       prediction,
-      fault: "Uncertain / Low Confidence Detection",
+      fault: "No Electronic Device Detected",
       severity: "Low",
       five_r: "Reduce",
-      recommendation: "Please upload a clearer image focusing on the specific component.",
-      safety_warning: "Avoid handling damaged electronics without visual confirmation.",
+      recommendation: "Please upload a clearer photo focusing directly on the electronic device or component.",
+      safety_warning: "Ensure the camera is focused on the device.",
       disclaimer: DEFAULT_DISCLAIMER,
     };
   }

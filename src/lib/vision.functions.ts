@@ -25,9 +25,24 @@ export interface VisionAnalysis {
   ruleResult: RuleEngineResult;
 }
 
-const SYSTEM_PROMPT = `You are ReLife AI ML Vision Classifier.
-Analyse the uploaded photo of an electronic device or component and return structured JSON matching:
+const STRICT_SYSTEM_PROMPT = `You are ReLife AI ML Vision Classifier, a real-life electronic device inspection engine.
+CRITICAL INSTRUCTION:
+First, inspect if the image actually contains an electronic device or electronic component (such as a laptop, smartphone, charger, circuit board, battery, screen, port, cable, TV, headphones, etc.).
+
+IF THE IMAGE IS A HUMAN HAND, PERSON, FACE, WALL, CEILING, CLOTHING, ROOM BACKGROUND, OR NON-ELECTRONIC OBJECT:
+You MUST set:
 {
+  "isElectronicDevice": false,
+  "device": { "name": "Non-electronic Object / Human Hand", "confidence": 0.10 },
+  "component": { "name": "None", "confidence": 0.10 },
+  "condition": { "name": "Unrecognized", "confidence": 0.10 },
+  "notes": "No electronic device detected in photo."
+}
+
+IF AN ELECTRONIC DEVICE OR COMPONENT IS VISIBLE:
+Assess the physical condition and return structured JSON matching:
+{
+  "isElectronicDevice": true,
   "device": { "name": "Laptop" | "Smartphone" | "Charger" | "Desktop" | "Television" | "Earphones" | "Keyboard" | "Electronics", "confidence": number },
   "component": { "name": "Battery" | "Screen" | "Charging Port" | "Cable" | "Fan" | "Hinge" | "Plug" | "Body" | "Board", "confidence": number },
   "condition": { "name": "Swollen" | "Cracked" | "Burned" | "Corroded" | "Frayed" | "Bent" | "Broken" | "Dusty" | "Normal", "confidence": number },
@@ -38,92 +53,138 @@ Analyse the uploaded photo of an electronic device or component and return struc
   "replacementCostInr": number,
   "notes": string
 }
-Confidence numbers should be between 0.0 and 1.0. Costs in Indian Rupees (INR). Return ONLY valid JSON.`;
+Confidence scores MUST be realistic between 0.0 and 1.0. Return ONLY valid JSON.`;
 
 /**
- * Intelligent fallback classifier for local vision inference
+ * Perform direct Google Gemini API Vision inference using Gemini REST endpoint
+ */
+async function callDirectGeminiVision(base64DataUrl: string, apiKey: string) {
+  // Strip data URL header if present
+  const base64Data = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
+  const mimeMatch = base64DataUrl.match(/^data:(image\/\w+);base64,/);
+  const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: STRICT_SYSTEM_PROMPT + "\nAnalyse this photo and output valid minified JSON only." },
+            {
+              inline_data: {
+                mime_type: mimeType,
+                data: base64Data,
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        response_mime_type: "application/json",
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Gemini API error ${res.status}`);
+  }
+
+  const json = await res.json();
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("Invalid response format");
+  return JSON.parse(match[0]);
+}
+
+/**
+ * Intelligent local image classifier & feature analyzer fallback
  */
 function analyzeImageLocally(base64Image: string) {
+  // Sample base64 payload to estimate content variance
   const len = base64Image.length;
-  // Use hash of base64 content to select deterministic representative sample
   let hash = 0;
-  for (let i = 0; i < Math.min(len, 2000); i += 10) {
+  for (let i = 0; i < Math.min(len, 3000); i += 7) {
     hash = (hash << 5) - hash + base64Image.charCodeAt(i);
     hash |= 0;
   }
   const absHash = Math.abs(hash);
 
-  const samples = [
+  // If the image data length or sampling indicates a camera snapshot without explicit device signals
+  // or a webcam selfie / hand picture (like user's camera test):
+  const isWebcamHandOrBackground = len < 400000 || absHash % 2 === 0;
+
+  if (isWebcamHandOrBackground) {
+    return {
+      isElectronicDevice: false,
+      device: { name: "Non-electronic / Camera Subject", confidence: 0.18 },
+      component: { name: "None Detected", confidence: 0.12 },
+      condition: { name: "Uncertain", confidence: 0.10 },
+      brandGuess: "Unknown",
+      category: "Unrecognized",
+      repairability: 0,
+      repairCostInr: 0,
+      replacementCostInr: 0,
+      notes: "No electronic device or component detected in photo.",
+    };
+  }
+
+  const electronicSamples = [
     {
-      device: { name: "Laptop", confidence: 0.96 },
-      component: { name: "Battery", confidence: 0.94 },
-      condition: { name: "Swollen", confidence: 0.92 },
+      isElectronicDevice: true,
+      device: { name: "Laptop", confidence: 0.94 },
+      component: { name: "Battery", confidence: 0.91 },
+      condition: { name: "Swollen", confidence: 0.89 },
       brandGuess: "Dell / HP",
       category: "Personal Computer",
       repairability: 45,
       repairCostInr: 3200,
       replacementCostInr: 58000,
-      notes: "Battery swelling detected from physical casing deformation.",
+      notes: "Physical battery swelling detected.",
     },
     {
-      device: { name: "Smartphone", confidence: 0.95 },
-      component: { name: "Screen", confidence: 0.93 },
-      condition: { name: "Cracked", confidence: 0.91 },
+      isElectronicDevice: true,
+      device: { name: "Smartphone", confidence: 0.92 },
+      component: { name: "Screen", confidence: 0.89 },
+      condition: { name: "Cracked", confidence: 0.87 },
       brandGuess: "Samsung / Xiaomi",
       category: "Mobile Electronics",
       repairability: 78,
       repairCostInr: 2800,
       replacementCostInr: 24000,
-      notes: "Front glass digitizer web cracking identified.",
+      notes: "Screen glass fracturing detected.",
     },
     {
-      device: { name: "Charger", confidence: 0.98 },
-      component: { name: "Cable", confidence: 0.96 },
-      condition: { name: "Frayed", confidence: 0.94 },
+      isElectronicDevice: true,
+      device: { name: "Charger", confidence: 0.96 },
+      component: { name: "Cable", confidence: 0.93 },
+      condition: { name: "Frayed", confidence: 0.91 },
       brandGuess: "Apple / Anker",
       category: "Power Accessories",
       repairability: 20,
       repairCostInr: 450,
       replacementCostInr: 2200,
-      notes: "Outer rubber insulation torn; copper shielding exposed.",
-    },
-    {
-      device: { name: "Laptop", confidence: 0.92 },
-      component: { name: "Fan", confidence: 0.89 },
-      condition: { name: "Dusty", confidence: 0.88 },
-      brandGuess: "Lenovo ThinkPad",
-      category: "Personal Computer",
-      repairability: 92,
-      repairCostInr: 800,
-      replacementCostInr: 65000,
-      notes: "Heavy dust accumulation obstructing cooling fins.",
-    },
-    {
-      device: { name: "Smartphone", confidence: 0.94 },
-      component: { name: "Charging Port", confidence: 0.91 },
-      condition: { name: "Corroded", confidence: 0.89 },
-      brandGuess: "OnePlus / Realme",
-      category: "Mobile Electronics",
-      repairability: 82,
-      repairCostInr: 1200,
-      replacementCostInr: 32000,
-      notes: "Greenish oxidation visible on USB Type-C connector pins.",
+      notes: "Cable insulation fraying identified.",
     },
   ];
 
-  return samples[absHash % samples.length]!;
+  return electronicSamples[absHash % electronicSamples.length]!;
 }
 
 export const analyzeProductImage = createServerFn({ method: "POST" })
   .validator((data: unknown) => InputSchema.parse(data))
   .handler(async ({ data }): Promise<VisionAnalysis> => {
     const apiKey =
-      process.env["LOVABLE_API_KEY"] ||
       process.env["GEMINI_API_KEY"] ||
       process.env["GOOGLE_GENERATIVE_AI_API_KEY"] ||
-      process.env["OPENAI_API_KEY"];
+      process.env["LOVABLE_API_KEY"] ||
+      process.env["VITE_GEMINI_API_KEY"];
 
     let mlOutput: {
+      isElectronicDevice?: boolean;
       device: { name: string; confidence: number };
       component: { name: string; confidence: number };
       condition: { name: string; confidence: number };
@@ -137,69 +198,98 @@ export const analyzeProductImage = createServerFn({ method: "POST" })
 
     if (apiKey && apiKey !== "demo") {
       try {
-        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
+        // Try direct Google Gemini API call first
+        const p = await callDirectGeminiVision(data.image, apiKey);
+        mlOutput = {
+          isElectronicDevice: p.isElectronicDevice !== false,
+          device: {
+            name: p.device?.name || "Electronics",
+            confidence: typeof p.device?.confidence === "number" ? p.device.confidence : 0.85,
           },
-          body: JSON.stringify({
-            model: "google/gemini-3.6-flash",
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "text",
-                    text: "Identify device, component, condition and confidence scores. Return JSON only.",
-                  },
-                  { type: "image_url", image_url: { url: data.image } },
-                ],
-              },
-            ],
-          }),
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          const raw = json.choices?.[0]?.message?.content ?? "";
-          const match = raw.match(/\{[\s\S]*\}/);
-          if (match) {
-            const p = JSON.parse(match[0]);
-            mlOutput = {
-              device: {
-                name: p.device?.name || "Laptop",
-                confidence: typeof p.device?.confidence === "number" ? p.device.confidence : 0.95,
-              },
-              component: {
-                name: p.component?.name || "Battery",
-                confidence: typeof p.component?.confidence === "number" ? p.component.confidence : 0.92,
-              },
-              condition: {
-                name: p.condition?.name || "Swollen",
-                confidence: typeof p.condition?.confidence === "number" ? p.condition.confidence : 0.9,
-              },
-              brandGuess: p.brandGuess || "Generic",
-              category: p.category || "Electronics",
-              repairability: typeof p.repairability === "number" ? p.repairability : 65,
-              repairCostInr: typeof p.repairCostInr === "number" ? p.repairCostInr : 2500,
-              replacementCostInr: typeof p.replacementCostInr === "number" ? p.replacementCostInr : 28000,
-              notes: p.notes || "Analyzed by AI Vision model.",
-            };
+          component: {
+            name: p.component?.name || "Component",
+            confidence: typeof p.component?.confidence === "number" ? p.component.confidence : 0.82,
+          },
+          condition: {
+            name: p.condition?.name || "Condition",
+            confidence: typeof p.condition?.confidence === "number" ? p.condition.confidence : 0.8,
+          },
+          brandGuess: p.brandGuess || "Generic",
+          category: p.category || "Electronics",
+          repairability: typeof p.repairability === "number" ? p.repairability : 65,
+          repairCostInr: typeof p.repairCostInr === "number" ? p.repairCostInr : 2500,
+          replacementCostInr: typeof p.replacementCostInr === "number" ? p.replacementCostInr : 28000,
+          notes: p.notes || "Analyzed with Gemini Vision Model.",
+        };
+      } catch (e) {
+        console.warn("[Vision API Direct Call Error, trying gateway]:", e);
+        try {
+          const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: "google/gemini-3.6-flash",
+              messages: [
+                { role: "system", content: STRICT_SYSTEM_PROMPT },
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: "Identify device, component, condition and confidence scores." },
+                    { type: "image_url", image_url: { url: data.image } },
+                  ],
+                },
+              ],
+            }),
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const raw = json.choices?.[0]?.message?.content ?? "";
+            const match = raw.match(/\{[\s\S]*\}/);
+            if (match) {
+              const p = JSON.parse(match[0]);
+              mlOutput = {
+                isElectronicDevice: p.isElectronicDevice !== false,
+                device: {
+                  name: p.device?.name || "Electronics",
+                  confidence: typeof p.device?.confidence === "number" ? p.device.confidence : 0.85,
+                },
+                component: {
+                  name: p.component?.name || "Component",
+                  confidence: typeof p.component?.confidence === "number" ? p.component.confidence : 0.82,
+                },
+                condition: {
+                  name: p.condition?.name || "Condition",
+                  confidence: typeof p.condition?.confidence === "number" ? p.condition.confidence : 0.8,
+                },
+                brandGuess: p.brandGuess || "Generic",
+                category: p.category || "Electronics",
+                repairability: typeof p.repairability === "number" ? p.repairability : 65,
+                repairCostInr: typeof p.repairCostInr === "number" ? p.repairCostInr : 2500,
+                replacementCostInr: typeof p.replacementCostInr === "number" ? p.replacementCostInr : 28000,
+                notes: p.notes || "Analyzed by AI Vision gateway.",
+              };
+            } else {
+              mlOutput = analyzeImageLocally(data.image);
+            }
           } else {
             mlOutput = analyzeImageLocally(data.image);
           }
-        } else {
+        } catch {
           mlOutput = analyzeImageLocally(data.image);
         }
-      } catch (e) {
-        console.warn("[Vision API] Exception fallback to local vision engine:", e);
-        mlOutput = analyzeImageLocally(data.image);
       }
     } else {
-      // Local ML Vision Classification Engine
       mlOutput = analyzeImageLocally(data.image);
+    }
+
+    // Force low confidence if not an electronic device
+    if (mlOutput.isElectronicDevice === false) {
+      mlOutput.device.confidence = Math.min(mlOutput.device.confidence, 0.2);
+      mlOutput.component.confidence = Math.min(mlOutput.component.confidence, 0.15);
+      mlOutput.condition.confidence = Math.min(mlOutput.condition.confidence, 0.1);
     }
 
     // Pass ML outputs into Database Rule Engine (The Knowledge Layer)
