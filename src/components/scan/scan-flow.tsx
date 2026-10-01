@@ -344,93 +344,185 @@ function ScanOverlay() {
 }
 
 function ResultCard({ result, analysis }: { result: RdeResult; analysis: VisionAnalysis }) {
+  const rule = analysis.ruleResult;
+  const pred = rule.prediction;
   const saved = Math.max(0, analysis.replacementCostInr - analysis.repairCostInr);
+
+  if (rule.lowConfidence) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="card-surface mt-6 p-6 border-amber-500/40 bg-amber-500/10 text-amber-200 rounded-2xl"
+      >
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-display text-lg font-semibold text-amber-300">
+              Low Confidence Detection
+            </h3>
+            <p className="mt-1 text-sm text-amber-200/90">{rule.confidenceMessage}</p>
+            <div className="mt-4 flex gap-4 text-xs font-mono text-amber-300/80">
+              <span>Device: {pred.device.name} ({Math.round(pred.device.confidence * 100)}%)</span>
+              <span>Component: {pred.component.name} ({Math.round(pred.component.confidence * 100)}%)</span>
+              <span>Condition: {pred.condition.name} ({Math.round(pred.condition.confidence * 100)}%)</span>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  const get5REmoji = (action: string) => {
+    switch (action) {
+      case "Recycle":
+        return "♻️";
+      case "Reuse":
+        return "🛠️";
+      case "Retrieve":
+        return "📦";
+      case "Redesign":
+        return "📐";
+      case "Reduce":
+        return "📉";
+      default:
+        return "⚡";
+    }
+  };
+
+  const getSeverityBadgeClass = (severity: string) => {
+    switch (severity) {
+      case "High":
+        return "bg-rose-500/20 text-rose-400 border-rose-500/40";
+      case "Medium":
+        return "bg-amber-500/20 text-amber-400 border-amber-500/40";
+      case "Low":
+        return "bg-emerald/20 text-emerald border-emerald/40";
+      default:
+        return "bg-muted text-muted-foreground";
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.7 }}
-      className="card-surface mt-6 overflow-hidden"
+      className="card-surface mt-6 overflow-hidden rounded-3xl border border-emerald/40 glow-ring"
     >
-      <div className="grid gap-8 p-7 md:grid-cols-[1.1fr_1fr]">
+      <div className="grid gap-8 p-7 md:grid-cols-[1.15fr_1fr]">
         <div>
-          <Eyebrow>R5 Recommendation</Eyebrow>
-          <h2 className="mt-4 text-3xl font-semibold">
-            <span className="text-gradient">{result.action}</span>
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">{result.headline}</p>
-
-          <dl className="mt-6 grid gap-4 sm:grid-cols-2">
-            <Stat label="Product" value={analysis.product} />
-            <Stat label="Detected condition" value={analysis.condition} />
-            <Stat label="Repairability" value={`${result.score} / 100`} />
-            <Stat label="Repair vs replace" value={`${Math.round(result.costRatio * 100)}%`} />
-            <Stat label="Estimated repair" value={inr(analysis.repairCostInr)} />
-            <Stat label="Estimated money saved" value={inr(saved)} />
-            <Stat label="Life extension" value={`${analysis.remainingLifeYears} years`} />
-            <Stat label="Estimated age" value={`${analysis.ageYearsEstimate} years`} />
-          </dl>
-
-          <div className="mt-6 rounded-2xl border border-border p-4">
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              <Sparkles className="h-3.5 w-3.5 text-lime" /> Why?
+          {/* Section 1: ML Model Output */}
+          <div className="rounded-2xl border border-border bg-background/50 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5" /> 🤖 ML Vision Model Output (Eyes)
             </p>
-            <ul className="mt-3 grid gap-2 text-sm text-muted-foreground">
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Stat
+                label="Device"
+                value={`${pred.device.name}`}
+                sub={`${Math.round(pred.device.confidence * 100)}% confidence`}
+              />
+              <Stat
+                label="Component"
+                value={`${pred.component.name}`}
+                sub={`${Math.round(pred.component.confidence * 100)}% confidence`}
+              />
+              <Stat
+                label="Visible Condition"
+                value={`${pred.condition.name}`}
+                sub={`${Math.round(pred.condition.confidence * 100)}% confidence`}
+              />
+            </div>
+          </div>
+
+          {/* Section 2: Database Rule Engine Decision */}
+          <div className="mt-6">
+            <Eyebrow>🧠 Database Rule Engine Decision</Eyebrow>
+            <div className="mt-3 flex items-center gap-3">
+              <h2 className="text-3xl font-semibold">
+                <span className="text-gradient">
+                  {get5REmoji(rule.five_r)} {rule.five_r.toUpperCase()}
+                </span>
+              </h2>
+              <span
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-mono font-semibold uppercase tracking-wider",
+                  getSeverityBadgeClass(rule.severity),
+                )}
+              >
+                {rule.severity} Severity
+              </span>
+            </div>
+            <p className="mt-3 text-sm text-foreground font-medium">
+              Potential Fault: <span className="text-emerald">{rule.fault}</span>
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">{rule.recommendation}</p>
+
+            {/* Safety Warning */}
+            {rule.safety_warning && (
+              <div className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs text-rose-300">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" /> Safety Precaution
+                </p>
+                <p className="mt-1">{rule.safety_warning}</p>
+              </div>
+            )}
+
+            <dl className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Stat label="Repairability Score" value={`${result.score} / 100`} />
+              <Stat label="Repair vs Replace" value={`${Math.round(result.costRatio * 100)}%`} />
+              <Stat label="Estimated Repair Cost" value={inr(analysis.repairCostInr)} />
+              <Stat label="Estimated Money Saved" value={inr(saved)} />
+            </dl>
+
+            <Button asChild variant="hero" size="lg" className="mt-6 w-full sm:w-auto">
+              <Link to="/skill-centers">
+                Find ReLife Skill Center <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        {/* Right Rail: RDE Details & System Disclaimer */}
+        <div className="grid content-start gap-5">
+          <div className="rounded-2xl border border-border p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Detected Component Plan
+            </p>
+            <ul className="mt-4 grid gap-2">
+              {analysis.detectedComponents.map((c) => (
+                <li
+                  key={c.name}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-sm"
+                >
+                  <span className="font-medium">{c.name}</span>
+                  <span className="text-right text-emerald font-mono text-xs">{c.state}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-border p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Reasoning & RDE Rules
+            </p>
+            <ul className="mt-3 grid gap-2 text-xs text-muted-foreground">
               {[...result.reasoning, ...(analysis.notes ? [analysis.notes] : [])].map((r) => (
                 <li key={r} className="flex gap-2">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-brand" />
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-brand" />
                   {r}
                 </li>
               ))}
             </ul>
           </div>
 
-          <Button asChild variant="hero" size="lg" className="mt-6">
-            <Link to="/skill-centers">
-              Find ReLife Skill Center <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
-        </div>
-
-        <div className="grid content-start gap-5">
-          {analysis.faults.length > 0 && (
-            <div className="rounded-2xl border border-border p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Detected faults
-              </p>
-              <ul className="mt-4 grid gap-2 text-sm">
-                {analysis.faults.map((f) => (
-                  <li key={f} className="flex gap-2 text-muted-foreground">
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-brand" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {analysis.detectedComponents.length > 0 && (
-            <div className="rounded-2xl border border-border p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Component plan
-              </p>
-              <ul className="mt-4 grid gap-2">
-                {analysis.detectedComponents.map((c) => (
-                  <li
-                    key={c.name}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-sm"
-                  >
-                    <span className="font-medium">{c.name}</span>
-                    <span className="text-right text-emerald">{c.state}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-border p-4 text-sm text-muted-foreground">
-            <p>Estimates generated by Gemini Vision from a single photo.</p>
-            <p className="mt-1">A Skill Center bench test confirms the final quote.</p>
+          {/* Important System Limitation Disclaimer */}
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs text-muted-foreground">
+            <p className="font-semibold text-amber-400 flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" /> System Limitation Notice
+            </p>
+            <p className="mt-1.5 leading-relaxed">{rule.disclaimer}</p>
           </div>
         </div>
       </div>
@@ -438,11 +530,13 @@ function ResultCard({ result, analysis }: { result: RdeResult; analysis: VisionA
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div>
       <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{label}</dt>
       <dd className="mt-1 font-display text-lg font-semibold">{value}</dd>
+      {sub && <p className="text-[0.7rem] text-emerald font-mono">{sub}</p>}
     </div>
   );
 }
+
