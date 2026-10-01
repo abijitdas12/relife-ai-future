@@ -56,10 +56,22 @@ Assess the physical condition and return structured JSON matching:
 Confidence scores MUST be realistic between 0.0 and 1.0. Return ONLY valid JSON.`;
 
 /**
+ * Call custom Python ML Model Inference Service (FastAPI / YOLOv8 trained on E-Waste dataset)
+ */
+async function callCustomMLModel(base64DataUrl: string, endpoint: string) {
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ image: base64DataUrl }),
+  });
+  if (!res.ok) throw new Error(`ML model endpoint returned ${res.status}`);
+  return await res.json();
+}
+
+/**
  * Perform direct Google Gemini API Vision inference using Gemini REST endpoint
  */
 async function callDirectGeminiVision(base64DataUrl: string, apiKey: string) {
-  // Strip data URL header if present
   const base64Data = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
   const mimeMatch = base64DataUrl.match(/^data:(image\/\w+);base64,/);
   const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
@@ -104,7 +116,6 @@ async function callDirectGeminiVision(base64DataUrl: string, apiKey: string) {
  * Intelligent local image classifier & feature analyzer fallback
  */
 function analyzeImageLocally(base64Image: string) {
-  // Sample base64 payload to estimate content variance
   const len = base64Image.length;
   let hash = 0;
   for (let i = 0; i < Math.min(len, 3000); i += 7) {
@@ -113,8 +124,6 @@ function analyzeImageLocally(base64Image: string) {
   }
   const absHash = Math.abs(hash);
 
-  // If the image data length or sampling indicates a camera snapshot without explicit device signals
-  // or a webcam selfie / hand picture (like user's camera test):
   const isWebcamHandOrBackground = len < 400000 || absHash % 2 === 0;
 
   if (isWebcamHandOrBackground) {
@@ -177,6 +186,7 @@ function analyzeImageLocally(base64Image: string) {
 export const analyzeProductImage = createServerFn({ method: "POST" })
   .validator((data: unknown) => InputSchema.parse(data))
   .handler(async ({ data }): Promise<VisionAnalysis> => {
+    const customEndpoint = process.env["ML_MODEL_ENDPOINT"];
     const apiKey =
       process.env["GEMINI_API_KEY"] ||
       process.env["GOOGLE_GENERATIVE_AI_API_KEY"] ||
@@ -196,9 +206,27 @@ export const analyzeProductImage = createServerFn({ method: "POST" })
       notes: string;
     };
 
-    if (apiKey && apiKey !== "demo") {
+    if (customEndpoint) {
       try {
-        // Try direct Google Gemini API call first
+        const p = await callCustomMLModel(data.image, customEndpoint);
+        mlOutput = {
+          isElectronicDevice: p.isElectronicDevice !== false,
+          device: { name: p.device?.name || "E-Waste Device", confidence: p.device?.confidence || 0.9 },
+          component: { name: p.component?.name || "Component", confidence: p.component?.confidence || 0.85 },
+          condition: { name: p.condition?.name || "Condition", confidence: p.condition?.confidence || 0.8 },
+          brandGuess: p.brandGuess || "Custom Trained Model",
+          category: p.category || "E-Waste Detection",
+          repairability: p.repairability || 65,
+          repairCostInr: p.repairCostInr || 2500,
+          replacementCostInr: p.replacementCostInr || 25000,
+          notes: p.notes || "Analyzed by custom trained Roboflow E-Waste YOLO model.",
+        };
+      } catch (err) {
+        console.warn("[Custom ML Model Endpoint Error]:", err);
+        mlOutput = analyzeImageLocally(data.image);
+      }
+    } else if (apiKey && apiKey !== "demo") {
+      try {
         const p = await callDirectGeminiVision(data.image, apiKey);
         mlOutput = {
           isElectronicDevice: p.isElectronicDevice !== false,
@@ -223,76 +251,18 @@ export const analyzeProductImage = createServerFn({ method: "POST" })
         };
       } catch (e) {
         console.warn("[Vision API Direct Call Error, trying gateway]:", e);
-        try {
-          const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              model: "google/gemini-3.6-flash",
-              messages: [
-                { role: "system", content: STRICT_SYSTEM_PROMPT },
-                {
-                  role: "user",
-                  content: [
-                    { type: "text", text: "Identify device, component, condition and confidence scores." },
-                    { type: "image_url", image_url: { url: data.image } },
-                  ],
-                },
-              ],
-            }),
-          });
-          if (res.ok) {
-            const json = await res.json();
-            const raw = json.choices?.[0]?.message?.content ?? "";
-            const match = raw.match(/\{[\s\S]*\}/);
-            if (match) {
-              const p = JSON.parse(match[0]);
-              mlOutput = {
-                isElectronicDevice: p.isElectronicDevice !== false,
-                device: {
-                  name: p.device?.name || "Electronics",
-                  confidence: typeof p.device?.confidence === "number" ? p.device.confidence : 0.85,
-                },
-                component: {
-                  name: p.component?.name || "Component",
-                  confidence: typeof p.component?.confidence === "number" ? p.component.confidence : 0.82,
-                },
-                condition: {
-                  name: p.condition?.name || "Condition",
-                  confidence: typeof p.condition?.confidence === "number" ? p.condition.confidence : 0.8,
-                },
-                brandGuess: p.brandGuess || "Generic",
-                category: p.category || "Electronics",
-                repairability: typeof p.repairability === "number" ? p.repairability : 65,
-                repairCostInr: typeof p.repairCostInr === "number" ? p.repairCostInr : 2500,
-                replacementCostInr: typeof p.replacementCostInr === "number" ? p.replacementCostInr : 28000,
-                notes: p.notes || "Analyzed by AI Vision gateway.",
-              };
-            } else {
-              mlOutput = analyzeImageLocally(data.image);
-            }
-          } else {
-            mlOutput = analyzeImageLocally(data.image);
-          }
-        } catch {
-          mlOutput = analyzeImageLocally(data.image);
-        }
+        mlOutput = analyzeImageLocally(data.image);
       }
     } else {
       mlOutput = analyzeImageLocally(data.image);
     }
 
-    // Force low confidence if not an electronic device
     if (mlOutput.isElectronicDevice === false) {
       mlOutput.device.confidence = Math.min(mlOutput.device.confidence, 0.2);
       mlOutput.component.confidence = Math.min(mlOutput.component.confidence, 0.15);
       mlOutput.condition.confidence = Math.min(mlOutput.condition.confidence, 0.1);
     }
 
-    // Pass ML outputs into Database Rule Engine (The Knowledge Layer)
     const ruleResult = await evaluateRuleEngine({
       device: mlOutput.device,
       component: mlOutput.component,
