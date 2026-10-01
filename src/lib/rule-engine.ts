@@ -175,8 +175,7 @@ export async function evaluateRuleEngine(
 
   // 2. Query Supabase Database Rules first
   try {
-    const { data, error } = await supabase
-      .from("fault_rules")
+    const { data, error } = await (supabase.from as any)("fault_rules")
       .select("*")
       .ilike("device", `%${device.name}%`)
       .ilike("component", `%${component.name}%`)
@@ -187,11 +186,11 @@ export async function evaluateRuleEngine(
       return {
         lowConfidence: false,
         prediction,
-        fault: data.fault,
-        severity: data.severity as SeverityLevel,
-        five_r: data.five_r as FiveRAction,
-        recommendation: data.recommendation,
-        safety_warning: data.safety_warning,
+        fault: (data as any).fault,
+        severity: (data as any).severity as SeverityLevel,
+        five_r: (data as any).five_r as FiveRAction,
+        recommendation: (data as any).recommendation,
+        safety_warning: (data as any).safety_warning,
         disclaimer: DEFAULT_DISCLAIMER,
       };
     }

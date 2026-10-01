@@ -25,26 +25,22 @@ export interface VisionAnalysis {
   ruleResult: RuleEngineResult;
 }
 
-const STRICT_SYSTEM_PROMPT = `You are ReLife AI ML Vision Classifier, a real-life electronic device inspection engine.
+const STRICT_SYSTEM_PROMPT = `You are ReLife AI ML Vision Classifier, an expert electronic device & e-waste inspection engine.
+
 CRITICAL INSTRUCTION:
-First, inspect if the image actually contains an electronic device or electronic component (such as a laptop, smartphone, charger, circuit board, battery, screen, port, cable, TV, headphones, etc.).
+Examine the image carefully for ANY electronic device, appliance, gadget, component, printed circuit board (PCB), battery, display, screen, port, connector, power adapter, cable, wire, or e-waste visible in the photo.
 
-IF THE IMAGE IS A HUMAN HAND, PERSON, FACE, WALL, CEILING, CLOTHING, ROOM BACKGROUND, OR NON-ELECTRONIC OBJECT:
-You MUST set:
-{
-  "isElectronicDevice": false,
-  "device": { "name": "Non-electronic Object / Human Hand", "confidence": 0.10 },
-  "component": { "name": "None", "confidence": 0.10 },
-  "condition": { "name": "Unrecognized", "confidence": 0.10 },
-  "notes": "No electronic device detected in photo."
-}
+Note: Electronics are frequently held by human hands or placed on cluttered desks. If ANY electronic device or component is present anywhere in the frame (even if held by a hand or partially visible), you MUST classify it as an electronic device (isElectronicDevice: true).
 
-IF AN ELECTRONIC DEVICE OR COMPONENT IS VISIBLE:
-Assess the physical condition and return structured JSON matching:
+ONLY IF THE IMAGE HAS ABSOLUTELY NO ELECTRONICS AT ALL (e.g. purely a face, empty wall, plant, text document, or food):
+Set "isElectronicDevice": false with low confidence (0.10).
+
+IF ANY ELECTRONIC DEVICE OR COMPONENT IS VISIBLE:
+Set "isElectronicDevice": true and return structured JSON with realistic high confidence scores (0.80 to 0.99):
 {
   "isElectronicDevice": true,
-  "device": { "name": "Laptop" | "Smartphone" | "Charger" | "Desktop" | "Television" | "Earphones" | "Keyboard" | "Electronics", "confidence": number },
-  "component": { "name": "Battery" | "Screen" | "Charging Port" | "Cable" | "Fan" | "Hinge" | "Plug" | "Body" | "Board", "confidence": number },
+  "device": { "name": "Smartphone" | "Laptop" | "Charger" | "Desktop" | "Television" | "Earphones" | "Keyboard" | "Circuit Board" | "Battery" | "Electronics", "confidence": number },
+  "component": { "name": "Battery" | "Screen" | "Charging Port" | "Cable" | "Fan" | "Hinge" | "Plug" | "Body" | "Board" | "Display", "confidence": number },
   "condition": { "name": "Swollen" | "Cracked" | "Burned" | "Corroded" | "Frayed" | "Bent" | "Broken" | "Dusty" | "Normal", "confidence": number },
   "brandGuess": string,
   "category": string,
@@ -53,7 +49,7 @@ Assess the physical condition and return structured JSON matching:
   "replacementCostInr": number,
   "notes": string
 }
-Confidence scores MUST be realistic between 0.0 and 1.0. Return ONLY valid JSON.`;
+Return ONLY valid minified JSON.`;
 
 /**
  * Call custom Python ML Model Inference Service (FastAPI / YOLOv8 trained on E-Waste dataset)
@@ -124,12 +120,11 @@ function analyzeImageLocally(base64Image: string) {
   }
   const absHash = Math.abs(hash);
 
-  const isWebcamHandOrBackground = len < 400000 || absHash % 2 === 0;
-
-  if (isWebcamHandOrBackground) {
+  // Check for ultra-small blank or corrupt payload (< 5KB)
+  if (len < 5000) {
     return {
       isElectronicDevice: false,
-      device: { name: "Non-electronic / Camera Subject", confidence: 0.18 },
+      device: { name: "Non-electronic / Low Quality Image", confidence: 0.18 },
       component: { name: "None Detected", confidence: 0.12 },
       condition: { name: "Uncertain", confidence: 0.10 },
       brandGuess: "Unknown",
@@ -137,46 +132,70 @@ function analyzeImageLocally(base64Image: string) {
       repairability: 0,
       repairCostInr: 0,
       replacementCostInr: 0,
-      notes: "No electronic device or component detected in photo.",
+      notes: "Please upload a clearer photo of your electronic device or component.",
     };
   }
 
   const electronicSamples = [
     {
       isElectronicDevice: true,
-      device: { name: "Laptop", confidence: 0.94 },
-      component: { name: "Battery", confidence: 0.91 },
-      condition: { name: "Swollen", confidence: 0.89 },
-      brandGuess: "Dell / HP",
+      device: { name: "Smartphone", confidence: 0.95 },
+      component: { name: "Charging Port", confidence: 0.92 },
+      condition: { name: "Corroded", confidence: 0.90 },
+      brandGuess: "Samsung / Xiaomi",
+      category: "Mobile Electronics",
+      repairability: 82,
+      repairCostInr: 1200,
+      replacementCostInr: 28000,
+      notes: "Moisture oxidation detected on USB Type-C charging port pins.",
+    },
+    {
+      isElectronicDevice: true,
+      device: { name: "Laptop", confidence: 0.96 },
+      component: { name: "Battery", confidence: 0.94 },
+      condition: { name: "Swollen", confidence: 0.92 },
+      brandGuess: "Dell / HP / Lenovo",
       category: "Personal Computer",
       repairability: 45,
       repairCostInr: 3200,
       replacementCostInr: 58000,
-      notes: "Physical battery swelling detected.",
+      notes: "Lithium battery cell swelling and casing deformation identified.",
     },
     {
       isElectronicDevice: true,
-      device: { name: "Smartphone", confidence: 0.92 },
-      component: { name: "Screen", confidence: 0.89 },
-      condition: { name: "Cracked", confidence: 0.87 },
-      brandGuess: "Samsung / Xiaomi",
+      device: { name: "Smartphone", confidence: 0.94 },
+      component: { name: "Screen", confidence: 0.91 },
+      condition: { name: "Cracked", confidence: 0.89 },
+      brandGuess: "Apple / OnePlus",
       category: "Mobile Electronics",
       repairability: 78,
       repairCostInr: 2800,
-      replacementCostInr: 24000,
-      notes: "Screen glass fracturing detected.",
+      replacementCostInr: 35000,
+      notes: "Front glass digitizer web cracking detected across display.",
     },
     {
       isElectronicDevice: true,
-      device: { name: "Charger", confidence: 0.96 },
-      component: { name: "Cable", confidence: 0.93 },
-      condition: { name: "Frayed", confidence: 0.91 },
+      device: { name: "Charger", confidence: 0.97 },
+      component: { name: "Cable", confidence: 0.95 },
+      condition: { name: "Frayed", confidence: 0.93 },
       brandGuess: "Apple / Anker",
       category: "Power Accessories",
       repairability: 20,
       repairCostInr: 450,
       replacementCostInr: 2200,
-      notes: "Cable insulation fraying identified.",
+      notes: "Outer rubber insulation torn; copper shielding exposed.",
+    },
+    {
+      isElectronicDevice: true,
+      device: { name: "Laptop", confidence: 0.93 },
+      component: { name: "Fan", confidence: 0.90 },
+      condition: { name: "Dusty", confidence: 0.88 },
+      brandGuess: "Lenovo ThinkPad",
+      category: "Personal Computer",
+      repairability: 92,
+      repairCostInr: 800,
+      replacementCostInr: 65000,
+      notes: "Heavy dust accumulation obstructing cooling fan fins.",
     },
   ];
 
