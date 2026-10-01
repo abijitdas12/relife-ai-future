@@ -47,6 +47,13 @@ export function ScanFlow() {
   const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<VisionAnalysis | null>(null);
   const [result, setResult] = useState<RdeResult | null>(null);
+  const [customApiKey, setCustomApiKey] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("relife_gemini_api_key") || "";
+    }
+    return "";
+  });
+  const [showKeyInput, setShowKeyInput] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -60,6 +67,17 @@ export function ScanFlow() {
     },
     [],
   );
+
+  const saveApiKey = (key: string) => {
+    setCustomApiKey(key);
+    if (typeof window !== "undefined") {
+      if (key) {
+        localStorage.setItem("relife_gemini_api_key", key);
+      } else {
+        localStorage.removeItem("relife_gemini_api_key");
+      }
+    }
+  };
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -104,44 +122,85 @@ export function ScanFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopCamera]);
 
-  const analyze = useCallback(async (image: string) => {
-    setResult(null);
-    setAnalysis(null);
-    setError(null);
-    setBusy(true);
-    setStage(0);
+  const analyze = useCallback(
+    async (image: string) => {
+      setResult(null);
+      setAnalysis(null);
+      setError(null);
+      setBusy(true);
+      setStage(0);
 
-    timers.current.forEach(clearTimeout);
-    timers.current = [1, 2, 3].map((i) => setTimeout(() => setStage(i), 900 * i));
+      timers.current.forEach(clearTimeout);
+      timers.current = [1, 2, 3].map((i) => setTimeout(() => setStage(i), 900 * i));
 
-    try {
-      const vision = await analyzeProductImage({ data: { image } });
-      timers.current.forEach(clearTimeout);
-      setAnalysis(vision);
-      setStage(4);
-      const rde = runRde({
-        repairCost: vision.repairCostInr,
-        replacementCost: vision.replacementCostInr,
-        ageYears: vision.ageYearsEstimate,
-        repairability: vision.repairability,
-        componentAvailability: vision.componentAvailability,
-        remainingLife: vision.remainingLifeYears,
-        componentValue: vision.componentValue,
-      });
-      timers.current = [
-        setTimeout(() => {
-          setStage(5);
-          setResult(rde);
-        }, 600),
-      ];
-    } catch (e) {
-      timers.current.forEach(clearTimeout);
-      setStage(-1);
-      setError(e instanceof Error ? e.message : "Analysis failed. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+      try {
+        const vision = await analyzeProductImage({
+          data: { image, apiKey: customApiKey.trim() || undefined },
+        });
+        timers.current.forEach(clearTimeout);
+        setAnalysis(vision);
+        setStage(4);
+        const rde = runRde({
+          repairCost: vision.repairCostInr,
+          replacementCost: vision.replacementCostInr,
+          ageYears: vision.ageYearsEstimate,
+          repairability: vision.repairability,
+          componentAvailability: vision.componentAvailability,
+          remainingLife: vision.remainingLifeYears,
+          componentValue: vision.componentValue,
+        });
+        timers.current = [
+          setTimeout(() => {
+            setStage(5);
+            setResult(rde);
+          }, 600),
+        ];
+      } catch (e) {
+        timers.current.forEach(clearTimeout);
+        setStage(-1);
+        setError(e instanceof Error ? e.message : "Analysis failed. Please try again.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [customApiKey],
+  );
+
+  const handleRefine = async (device: string, component: string, condition: string) => {
+    if (!analysis) return;
+    const { evaluateRuleEngine } = await import("@/lib/rule-engine");
+    const newRule = await evaluateRuleEngine({
+      device: { name: device, confidence: 0.95 },
+      component: { name: component, confidence: 0.92 },
+      condition: { name: condition, confidence: 0.90 },
+    });
+
+    const updatedVision: VisionAnalysis = {
+      ...analysis,
+      product: device,
+      condition: condition,
+      faults: [`${component}: ${condition}`, newRule.fault],
+      detectedComponents: [
+        {
+          name: component,
+          state: `${condition} (95% conf)`,
+        },
+      ],
+      ruleResult: newRule,
+    };
+
+    setAnalysis(updatedVision);
+    const rde = runRde({
+      repairCost: updatedVision.repairCostInr,
+      replacementCost: updatedVision.replacementCostInr,
+      ageYears: updatedVision.ageYearsEstimate,
+      repairability: updatedVision.repairability,
+      componentAvailability: updatedVision.componentAvailability,
+      remainingLife: updatedVision.remainingLifeYears,
+      componentValue: updatedVision.componentValue,
+    });
+    setResult(rde);
+  };
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -329,7 +388,13 @@ export function ScanFlow() {
         </div>
       </div>
 
-      {result && analysis && <ResultCard result={result} analysis={analysis} />}
+      {result && analysis && (
+        <ResultCard
+          result={result}
+          analysis={analysis}
+          onRefine={handleRefine}
+        />
+      )}
     </Section>
   );
 }
@@ -343,7 +408,26 @@ function ScanOverlay() {
   );
 }
 
-function ResultCard({ result, analysis }: { result: RdeResult; analysis: VisionAnalysis }) {
+const REFINEMENT_PRESETS = [
+  { label: "📱 Smartphone (Screen Crack)", device: "Smartphone", component: "Screen", condition: "Cracked" },
+  { label: "📱 Smartphone (Corroded Port)", device: "Smartphone", component: "Charging Port", condition: "Corroded" },
+  { label: "💻 Laptop (Swollen Battery)", device: "Laptop", component: "Battery", condition: "Swollen" },
+  { label: "💻 Laptop (Dusty Fan)", device: "Laptop", component: "Fan", condition: "Dusty" },
+  { label: "⚡ Charger (Frayed Cable)", device: "Charger", component: "Cable", condition: "Frayed" },
+  { label: "📟 Circuit Board (Burned IC)", device: "Circuit Board", component: "Board", condition: "Burned" },
+  { label: "🖥️ Television (Cracked Screen)", device: "Television", component: "Screen", condition: "Cracked" },
+  { label: "🎧 Earphones (Corroded Pin)", device: "Earphones", component: "Plug", condition: "Corroded" },
+];
+
+function ResultCard({
+  result,
+  analysis,
+  onRefine,
+}: {
+  result: RdeResult;
+  analysis: VisionAnalysis;
+  onRefine: (device: string, component: string, condition: string) => void;
+}) {
   const rule = analysis.ruleResult;
   const pred = rule.prediction;
   const saved = Math.max(0, analysis.replacementCostInr - analysis.repairCostInr);
@@ -357,15 +441,25 @@ function ResultCard({ result, analysis }: { result: RdeResult; analysis: VisionA
       >
         <div className="flex items-start gap-3">
           <AlertTriangle className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
-          <div>
+          <div className="w-full">
             <h3 className="font-display text-lg font-semibold text-amber-300">
-              Low Confidence Detection
+              Low Confidence / Unclear Object Detection
             </h3>
             <p className="mt-1 text-sm text-amber-200/90">{rule.confidenceMessage}</p>
-            <div className="mt-4 flex gap-4 text-xs font-mono text-amber-300/80">
-              <span>Device: {pred.device.name} ({Math.round(pred.device.confidence * 100)}%)</span>
-              <span>Component: {pred.component.name} ({Math.round(pred.component.confidence * 100)}%)</span>
-              <span>Condition: {pred.condition.name} ({Math.round(pred.condition.confidence * 100)}%)</span>
+            
+            <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-amber-300">
+              Select your electronic device & component to run 5R Analysis:
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {REFINEMENT_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  onClick={() => onRefine(p.device, p.component, p.condition)}
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/20 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/30 transition-colors"
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -433,6 +527,28 @@ function ResultCard({ result, analysis }: { result: RdeResult; analysis: VisionA
                 value={`${pred.condition.name}`}
                 sub={`${Math.round(pred.condition.confidence * 100)}% confidence`}
               />
+            </div>
+
+            <div className="mt-4 border-t border-border/60 pt-3">
+              <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                Refine / Change Device Target:
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {REFINEMENT_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    onClick={() => onRefine(p.device, p.component, p.condition)}
+                    className={cn(
+                      "rounded-lg border px-2.5 py-1 text-xs transition-all",
+                      pred.device.name === p.device && pred.condition.name === p.condition
+                        ? "border-emerald bg-emerald/15 text-emerald font-semibold shadow-sm"
+                        : "border-border/80 bg-background/60 text-muted-foreground hover:border-emerald/40 hover:text-foreground",
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

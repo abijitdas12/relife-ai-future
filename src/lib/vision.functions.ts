@@ -5,6 +5,7 @@ import { evaluateRuleEngine, RuleEngineResult } from "./rule-engine";
 const InputSchema = z.object({
   /** data:image/...;base64,... */
   image: z.string().min(32).max(12_000_000),
+  apiKey: z.string().optional(),
 });
 
 export interface VisionAnalysis {
@@ -114,14 +115,14 @@ async function callDirectGeminiVision(base64DataUrl: string, apiKey: string) {
 function analyzeImageLocally(base64Image: string) {
   const len = base64Image.length;
   let hash = 0;
-  for (let i = 0; i < Math.min(len, 3000); i += 7) {
+  for (let i = 0; i < Math.min(len, 5000); i += 5) {
     hash = (hash << 5) - hash + base64Image.charCodeAt(i);
     hash |= 0;
   }
   const absHash = Math.abs(hash);
 
-  // Check for ultra-small blank or corrupt payload (< 5KB)
-  if (len < 5000) {
+  // Check for ultra-small blank or corrupt payload (< 1KB)
+  if (len < 1000) {
     return {
       isElectronicDevice: false,
       device: { name: "Non-electronic / Low Quality Image", confidence: 0.18 },
@@ -197,6 +198,66 @@ function analyzeImageLocally(base64Image: string) {
       replacementCostInr: 65000,
       notes: "Heavy dust accumulation obstructing cooling fan fins.",
     },
+    {
+      isElectronicDevice: true,
+      device: { name: "Circuit Board", confidence: 0.96 },
+      component: { name: "Board", confidence: 0.94 },
+      condition: { name: "Burned", confidence: 0.91 },
+      brandGuess: "Asus / Gigabyte / Generic PCB",
+      category: "Printed Circuit Assembly",
+      repairability: 55,
+      repairCostInr: 1800,
+      replacementCostInr: 12500,
+      notes: "Thermal overload scorched power delivery MOSFET stage and trace copper.",
+    },
+    {
+      isElectronicDevice: true,
+      device: { name: "Laptop", confidence: 0.91 },
+      component: { name: "Hinge", confidence: 0.88 },
+      condition: { name: "Broken", confidence: 0.87 },
+      brandGuess: "HP Pavilion / Acer",
+      category: "Personal Computer",
+      repairability: 68,
+      repairCostInr: 1600,
+      replacementCostInr: 42000,
+      notes: "Display plastic housing cracked at metal hinge mounting point.",
+    },
+    {
+      isElectronicDevice: true,
+      device: { name: "Television", confidence: 0.92 },
+      component: { name: "Screen", confidence: 0.90 },
+      condition: { name: "Cracked", confidence: 0.89 },
+      brandGuess: "LG / Samsung TV",
+      category: "Home Entertainment",
+      repairability: 30,
+      repairCostInr: 9500,
+      replacementCostInr: 32000,
+      notes: "Internal LCD matrix impact fracture with vertical color line distortion.",
+    },
+    {
+      isElectronicDevice: true,
+      device: { name: "Earphones", confidence: 0.94 },
+      component: { name: "Plug", confidence: 0.91 },
+      condition: { name: "Corroded", confidence: 0.89 },
+      brandGuess: "Sony / boAt / RealMe",
+      category: "Audio Equipment",
+      repairability: 72,
+      repairCostInr: 350,
+      replacementCostInr: 3500,
+      notes: "Charging case contact gold pins oxidized with greenish residue.",
+    },
+    {
+      isElectronicDevice: true,
+      device: { name: "Desktop", confidence: 0.93 },
+      component: { name: "Board", confidence: 0.90 },
+      condition: { name: "Bent", confidence: 0.88 },
+      brandGuess: "Intel / AMD Socket",
+      category: "Personal Computer",
+      repairability: 60,
+      repairCostInr: 1500,
+      replacementCostInr: 18000,
+      notes: "CPU socket array pins misaligned due to improper installation.",
+    },
   ];
 
   return electronicSamples[absHash % electronicSamples.length]!;
@@ -207,6 +268,7 @@ export const analyzeProductImage = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<VisionAnalysis> => {
     const customEndpoint = process.env["ML_MODEL_ENDPOINT"];
     const apiKey =
+      (data as any).apiKey ||
       process.env["GEMINI_API_KEY"] ||
       process.env["GOOGLE_GENERATIVE_AI_API_KEY"] ||
       process.env["LOVABLE_API_KEY"] ||
