@@ -259,6 +259,63 @@ User Fault Description: "${userFaultDescription.trim() || "None provided"}"`;
   throw lastError || new Error("Failed to reach Gemini Vision API.");
 }
 
+/**
+ * Call Local FastAPI ML Inference Server (YOLOv8 / PIL Vision Engine) at http://localhost:8000/predict
+ */
+export async function callLocalMLServer(
+  base64Data: string,
+  userFaultDescription: string = ""
+): Promise<GeminiVisionOutput | null> {
+  try {
+    const cleanBase64 = base64Data.includes(",") ? base64Data.split(",")[1] || base64Data : base64Data;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1800);
+
+    const res = await fetch("http://localhost:8000/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: cleanBase64 }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.device) {
+        const isElec = data.isElectronicDevice !== false;
+        const deviceName = data.device.name || "Electronic Device";
+        const confidenceNum = data.device.confidence || 0.85;
+
+        let cat: EWasteCategory = "other_electronic";
+        const devLower = deviceName.toLowerCase();
+        if (devLower.includes("laptop")) cat = "laptop";
+        else if (devLower.includes("smartphone") || devLower.includes("phone")) cat = "smartphone";
+        else if (devLower.includes("circuit") || devLower.includes("pcb")) cat = "circuit_board";
+        else if (devLower.includes("battery")) cat = "battery";
+        else if (devLower.includes("charger")) cat = "charger_adapter";
+        else if (!isElec) cat = "not_electronic";
+
+        return {
+          is_electronic_device: isElec,
+          category: cat,
+          brand_model: deviceName,
+          visible_damage: [data.condition?.name || "Physical Surface Damage"],
+          likely_fault: data.component?.name ? `${data.component.name} Issue` : "Electronic Component Fault",
+          product_name: CATEGORY_LABELS[cat] || deviceName,
+          likely_model: deviceName,
+          visible_condition: data.condition?.name || "Physical Surface Wear",
+          possible_faults: [data.component?.name ? `${data.component.name} Issue` : "Electronic Component Fault"],
+          confidence: confidenceNum,
+          requires_human_inspection: isElec,
+        };
+      }
+    }
+  } catch {
+    // Local ML server unavailable
+  }
+  return null;
+}
+
 // ============================================================================
 // 3. OUTPUT LAYER & END-TO-END PIPELINE SERVER FUNCTION
 // ============================================================================
@@ -298,19 +355,32 @@ export const runReLifePipeline = createServerFn({ method: "POST" })
       process.env["VITE_GEMINI_API_KEY"] ||
       data.apiKey;
 
-    if (!apiKey) {
-      throw new Error(
-        "Gemini API key is not configured on the server environment. Please set GEMINI_API_KEY in your .env file."
-      );
+    let geminiResult: GeminiVisionOutput | null = null;
+
+    // Execute Gemini Vision AI call
+    if (apiKey) {
+      try {
+        geminiResult = await callGeminiVisionModule(
+          data.image,
+          data.user_fault_description || "",
+          apiKey,
+          data.mimeType || "image/jpeg"
+        );
+      } catch (err) {
+        console.warn("[Gemini Vision Notice]:", err);
+      }
     }
 
-    // STEP 3: Execute Gemini Vision AI call
-    let geminiResult = await callGeminiVisionModule(
-      data.image,
-      data.user_fault_description || "",
-      apiKey,
-      data.mimeType || "image/jpeg"
-    );
+    // Try Local ML Inference Engine (FastAPI + YOLOv8) if Gemini is unavailable or not set
+    if (!geminiResult) {
+      geminiResult = await callLocalMLServer(data.image, data.user_fault_description || "");
+    }
+
+    if (!geminiResult) {
+      throw new Error(
+        "Vision AI backend services unavailable. Please configure GEMINI_API_KEY or launch local ML inference service."
+      );
+    }
 
     // If user manually confirmed or changed category via low-confidence fallback dropdown
     if (data.confirmed_category && EWASTE_CATEGORIES.includes(data.confirmed_category as EWasteCategory)) {

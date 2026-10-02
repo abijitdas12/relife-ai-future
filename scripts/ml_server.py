@@ -172,40 +172,130 @@ async def predict_ewaste(payload: ImagePayload):
 def parse_detection_to_structure(top_class: str, confidence: float, detections: list):
     cls_lower = str(top_class).lower()
 
+    category = "other_electronic"
     device = "Electronics"
     component = "Mainboard"
-    condition = "Physical Damage"
+    condition = "Physical Wear"
 
-    if "laptop" in cls_lower or "computer" in cls_lower:
+    if "laptop" in cls_lower:
+        category = "laptop"
         device = "Laptop"
-        component = "Battery / Fan Assembly"
-        condition = "Thermal Dust Obstruction"
+        component = "Battery & Fan Assembly"
+        condition = "Thermal Dust Obstruction & Surface Scratches"
     elif "phone" in cls_lower or "mobile" in cls_lower or "smartphone" in cls_lower:
+        category = "smartphone"
         device = "Smartphone"
         component = "Display Glass Digitizer"
         condition = "Front Glass Fractured"
+    elif "tablet" in cls_lower or "ipad" in cls_lower:
+        category = "tablet"
+        device = "Tablet PC"
+        component = "Touchscreen Digitizer"
+        condition = "Display Glass Fractured"
+    elif "desktop" in cls_lower or "tower" in cls_lower or "pc" in cls_lower:
+        category = "desktop_pc"
+        device = "Desktop PC Tower"
+        component = "SMPS Power Supply"
+        condition = "Capacitor Aging & Internal Dust"
+    elif "monitor" in cls_lower:
+        category = "monitor"
+        device = "Computer Monitor"
+        component = "LCD Panel Backlight"
+        condition = "Screen Flicker & Dead Pixels"
+    elif "tv" in cls_lower or "television" in cls_lower:
+        category = "television"
+        device = "Television"
+        component = "Main Logic Board"
+        condition = "Backlight Degraded"
+    elif "keyboard" in cls_lower:
+        category = "keyboard"
+        device = "Keyboard"
+        component = "Key Switch Matrix"
+        condition = "Worn Keycaps & Debris"
+    elif "mouse" in cls_lower:
+        category = "mouse"
+        device = "Computer Mouse"
+        component = "Optical Sensor & Switch"
+        condition = "Left-Click Switch Bouncing"
+    elif "printer" in cls_lower or "scanner" in cls_lower:
+        category = "printer"
+        device = "Printer / Scanner"
+        component = "Printhead Roller Assembly"
+        condition = "Roller Wear & Ink Residue"
+    elif "router" in cls_lower or "modem" in cls_lower:
+        category = "router"
+        device = "Wi-Fi Router / Modem"
+        component = "Ethernet PHY Transceiver"
+        condition = "Port Strain & Thermal Aging"
+    elif "charger" in cls_lower or "adapter" in cls_lower:
+        category = "charger_adapter"
+        device = "Power Adapter / Charger"
+        component = "Insulation Wiring & Transformer"
+        condition = "Frayed Insulation Strain"
+    elif "power_bank" in cls_lower or "bank" in cls_lower:
+        category = "power_bank"
+        device = "Power Bank"
+        component = "Lithium Battery Cells"
+        condition = "Cell Capacity Degradation"
+    elif "headphone" in cls_lower or "earbud" in cls_lower or "earphone" in cls_lower:
+        category = "headphones_earbuds"
+        device = "Headphones / Earbuds"
+        component = "Audio Driver & Cable"
+        condition = "Driver Distortion & Wire Wear"
+    elif "speaker" in cls_lower:
+        category = "speaker"
+        device = "Audio Speaker"
+        component = "Speaker Cone & Amplifier"
+        condition = "Diaphragm Wear"
+    elif "camera" in cls_lower:
+        category = "camera"
+        device = "Digital Camera"
+        component = "Optical Lens Assembly"
+        condition = "Lens Scratch / Sensor Dust"
     elif "battery" in cls_lower:
+        category = "battery"
         device = "Lithium Battery Pack"
         component = "Lithium Cell Housing"
         condition = "Swollen Cell Gas Buildup"
-    elif "cable" in cls_lower or "wire" in cls_lower or "charger" in cls_lower:
-        device = "Power Adapter / Charger"
-        component = "Insulation Wiring"
-        condition = "Frayed Insulation Strain"
+    elif "cable" in cls_lower or "wire" in cls_lower:
+        category = "cables_wires"
+        device = "Cables & Wiring"
+        component = "Copper Wire Harness"
+        condition = "Insulation Strain & Kinks"
     elif "pcb" in cls_lower or "board" in cls_lower or "circuit" in cls_lower:
+        category = "circuit_board"
         device = "Printed Circuit Board (PCB)"
         component = "SMD Controller Chip"
         condition = "Solder Joint Fracture & Oxidation"
     elif "display" in cls_lower or "panel" in cls_lower:
+        category = "monitor"
         device = "Display Panel"
         component = "LCD / OLED Matrix"
         condition = "Cracked Front Glass"
+    elif "appliance_small" in cls_lower or "microwave" in cls_lower or "toaster" in cls_lower:
+        category = "appliance_small"
+        device = "Small Home Appliance"
+        component = "Heating Element / Motor"
+        condition = "Thermal Degradation"
+    elif "appliance_large" in cls_lower or "fridge" in cls_lower or "washer" in cls_lower:
+        category = "appliance_large"
+        device = "Large Home Appliance"
+        component = "Compressor / Motor Unit"
+        condition = "Mechanical Wear"
+    elif "human" in cls_lower or "person" in cls_lower or "face" in cls_lower:
+        category = "not_electronic"
+        device = "Non-Electronic Subject"
+        component = "None"
+        condition = "Human / Non-Electronic"
+
+    is_electronic = category != "not_electronic"
 
     return {
-        "isElectronicDevice": True,
+        "isElectronicDevice": is_electronic,
+        "category": category,
         "device": {"name": device, "confidence": round(confidence, 2)},
         "component": {"name": component, "confidence": round(max(0.4, confidence - 0.05), 2)},
         "condition": {"name": condition, "confidence": round(max(0.4, confidence - 0.08), 2)},
         "detections": detections,
-        "notes": f"Inference processed via trained ReLife AI E-Waste model ({top_class}, conf: {round(confidence, 2)})."
+        "notes": f"Inference processed via ReLife AI E-Waste model ({top_class}, conf: {round(confidence, 2)})."
     }
