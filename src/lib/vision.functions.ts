@@ -290,46 +290,65 @@ async function callHuggingFaceVisionAPI(base64DataUrl: string): Promise<GeminiVi
  * Real Base64 Image Pixel & Visual Spectrum Analyzer (offline / local visual detection engine)
  */
 function analyzeRealImagePixels(base64DataUrl: string, userFaultDesc: string): GeminiVisionOutput {
-  const cleanB64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
   const descLower = userFaultDesc.toLowerCase();
+  const cleanB64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
 
-  const sampleSize = Math.min(cleanB64.length, 12000);
-  let skinTonePixelCount = 0;
-  let pcbGreenCount = 0;
-  let metallicGrayCount = 0;
-  let darkGlassCount = 0;
-
-  for (let i = 0; i < sampleSize; i += 4) {
-    const r = cleanB64.charCodeAt(i) & 0xff;
-    const g = (cleanB64.charCodeAt(i + 1) || 0) & 0xff;
-    const b = (cleanB64.charCodeAt(i + 2) || 0) & 0xff;
-
-    // Human skin tone signature check
-    if (r > 60 && r > g && g > b && (r - g) > 12 && (g - b) > 8) {
-      skinTonePixelCount++;
+  let rawBytes: Uint8Array;
+  try {
+    if (typeof Buffer !== "undefined") {
+      rawBytes = Uint8Array.from(Buffer.from(cleanB64, "base64"));
+    } else {
+      const binaryString = atob(cleanB64);
+      rawBytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        rawBytes[i] = binaryString.charCodeAt(i);
+      }
     }
-    // Circuit Board Green Solder Mask signature check
-    else if (g > 50 && g > r * 1.1 && g > b * 1.1) {
+  } catch {
+    rawBytes = new Uint8Array(0);
+  }
+
+  let skinToneCount = 0;
+  let pcbGreenCount = 0;
+  let darkGlassCount = 0;
+  let metallicCount = 0;
+  let totalSampled = 0;
+
+  const len = rawBytes.length;
+  const step = Math.max(3, Math.floor(len / 4000) * 3);
+
+  for (let i = 0; i < len - 2; i += step) {
+    const r = rawBytes[i] ?? 0;
+    const g = rawBytes[i + 1] ?? 0;
+    const b = rawBytes[i + 2] ?? 0;
+    totalSampled++;
+
+    // 1. Human skin tone signature check
+    if (r > 60 && r > g && g > b && (r - g) > 12 && (g - b) > 8) {
+      skinToneCount++;
+    }
+    // 2. Circuit Board Green Solder Mask signature check
+    else if (g > 50 && g > r * 1.15 && g > b * 1.15) {
       pcbGreenCount++;
     }
-    // Dark OLED/Glass Screen signature check
-    else if (r < 50 && g < 50 && b < 50) {
+    // 3. Dark OLED / Glass display panel signature check
+    else if (r < 45 && g < 45 && b < 45) {
       darkGlassCount++;
     }
-    // Metallic Aluminum/Silver signature check
-    else if (Math.abs(r - g) < 15 && Math.abs(g - b) < 15 && r > 110) {
-      metallicGrayCount++;
+    // 4. Metallic aluminum / silver chassis signature check
+    else if (Math.abs(r - g) < 15 && Math.abs(g - b) < 15 && r > 100) {
+      metallicCount++;
     }
   }
 
-  const totalSampled = Math.max(1, sampleSize / 4);
-  const skinRatio = skinTonePixelCount / totalSampled;
-  const pcbRatio = pcbGreenCount / totalSampled;
-  const glassRatio = darkGlassCount / totalSampled;
-  const metallicRatio = metallicGrayCount / totalSampled;
+  const sampleDenom = Math.max(1, totalSampled);
+  const skinRatio = skinToneCount / sampleDenom;
+  const pcbRatio = pcbGreenCount / sampleDenom;
+  const glassRatio = darkGlassCount / sampleDenom;
+  const metallicRatio = metallicCount / sampleDenom;
 
   // 1. Human Face / Selfie / Non-Electronic Detection
-  if (skinRatio > 0.40 && pcbRatio < 0.08 && glassRatio < 0.25 && !descLower.match(/(laptop|phone|battery|circuit|screen|pcb|gpu|motherboard|wire|charger)/)) {
+  if (skinRatio > 0.45 && pcbRatio < 0.08 && glassRatio < 0.25 && !descLower.match(/(laptop|phone|battery|circuit|screen|pcb|gpu|motherboard|wire|charger)/)) {
     return {
       is_electronic_device: false,
       product_name: "Non-Electronic Subject (Person / Face Detected)",
