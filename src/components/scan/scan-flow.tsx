@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Cpu,
   ImageIcon,
-  Key,
   RefreshCw,
   ScanLine,
   Sparkles,
@@ -16,8 +15,15 @@ import {
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Eyebrow, Section } from "@/components/sections/primitives";
-import { runRde, type RdeResult } from "@/lib/rde";
-import { analyzeProductImage, runReLifePipeline, type VisionAnalysis } from "@/lib/vision.functions";
+import {
+  runRde,
+  type RdeResult,
+  EWASTE_CATEGORIES,
+  EWasteCategory,
+  CATEGORY_LABELS,
+} from "@/lib/rde";
+import { runReLifePipeline, type VisionAnalysis } from "@/lib/vision.functions";
+import { processImageForUpload } from "@/lib/image-processor";
 import { cn } from "@/lib/utils";
 
 const STAGES = [
@@ -31,30 +37,23 @@ const STAGES = [
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
-function readAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Could not read that file."));
-    reader.readAsDataURL(file);
-  });
-}
-
 export function ScanFlow() {
   const [preview, setPreview] = useState<string | null>(null);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [processedBase64, setProcessedBase64] = useState<string | null>(null);
+  const [processedMimeType, setProcessedMimeType] = useState<string>("image/jpeg");
   const [stage, setStage] = useState(-1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<VisionAnalysis | null>(null);
   const [result, setResult] = useState<RdeResult | null>(null);
-  const [customApiKey, setCustomApiKey] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("relife_gemini_api_key") || "";
-    }
-    return "";
-  });
-  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [userFaultDescription, setUserFaultDescription] = useState<string>("");
+  const [pipelineResult, setPipelineResult] = useState<any>(null);
+
+  // Low confidence fallback states
+  const [pendingConfirmation, setPendingConfirmation] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<EWasteCategory>("smartphone");
+  const [lowConfidenceScore, setLowConfidenceScore] = useState<number | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -68,17 +67,6 @@ export function ScanFlow() {
     },
     [],
   );
-
-  const saveApiKey = (key: string) => {
-    setCustomApiKey(key);
-    if (typeof window !== "undefined") {
-      if (key) {
-        localStorage.setItem("relife_gemini_api_key", key);
-      } else {
-        localStorage.removeItem("relife_gemini_api_key");
-      }
-    }
-  };
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -108,42 +96,64 @@ export function ScanFlow() {
     }
   }, []);
 
-  const capturePhoto = useCallback(() => {
+  const capturePhoto = useCallback(async () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.getContext("2d")?.drawImage(video, 0, 0);
-    const url = canvas.toDataURL("image/jpeg", 0.9);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
     stopCamera();
-    setPreview(url);
-    setDataUrl(url);
-    void analyze(url);
+    await processAndSetImage(dataUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopCamera]);
 
-  const [userFaultDescription, setUserFaultDescription] = useState<string>("");
-  const [pipelineResult, setPipelineResult] = useState<any>(null);
+  const processAndSetImage = async (source: File | string) => {
+    setError(null);
+    setPendingConfirmation(false);
+    setResult(null);
+    setAnalysis(null);
+    setPipelineResult(null);
+    try {
+      const processed = await processImageForUpload(source);
+      setPreview(processed.previewUrl);
+      setProcessedBase64(processed.base64);
+      setProcessedMimeType(processed.mimeType);
+      await analyze(processed.base64, processed.mimeType, userFaultDescription);
+    } catch (err: any) {
+      setError(err.message || "Failed to process image.");
+    }
+  };
 
   const analyze = useCallback(
-    async (image: string) => {
-      setResult(null);
-      setAnalysis(null);
-      setPipelineResult(null);
-      setError(null);
+    async (
+      base64: string,
+      mimeType: string,
+      faultDesc: string,
+      confirmedCategory?: string
+    ) => {
       setBusy(true);
-      setStage(0);
+      setError(null);
 
+      if (!confirmedCategory) {
+        setResult(null);
+        setAnalysis(null);
+        setPipelineResult(null);
+        setPendingConfirmation(false);
+      }
+
+      setStage(0);
       timers.current.forEach(clearTimeout);
-      timers.current = [1, 2, 3].map((i) => setTimeout(() => setStage(i), 800 * i));
+      timers.current = [1, 2, 3].map((i) => setTimeout(() => setStage(i), 400 * i));
 
       try {
         const pipelineResponse = await runReLifePipeline({
           data: {
-            image,
-            user_fault_description: userFaultDescription.trim(),
-            apiKey: customApiKey.trim() || undefined,
+            image: base64,
+            mimeType,
+            user_fault_description: faultDesc.trim(),
+            confirmed_category: confirmedCategory,
           },
         });
 
@@ -151,16 +161,41 @@ export function ScanFlow() {
         setPipelineResult(pipelineResponse);
 
         if (!pipelineResponse.image_validation.isValid) {
-          setError(pipelineResponse.image_validation.reason || "Image quality validation failed.");
+          setError(pipelineResponse.image_validation.reason || "Image quality check failed.");
           setStage(-1);
           setBusy(false);
           return;
         }
 
+        const confidenceVal =
+          typeof pipelineResponse.gemini_output.confidence === "number"
+            ? pipelineResponse.gemini_output.confidence
+            : pipelineResponse.gemini_output.confidence === "high"
+            ? 0.9
+            : pipelineResponse.gemini_output.confidence === "medium"
+            ? 0.7
+            : 0.4;
+
+        const category = pipelineResponse.gemini_output.category || "other_electronic";
+
+        // Requirement 5: Low-confidence fallback check (confidence < 0.6 or not_electronic)
+        if (!confirmedCategory && (confidenceVal < 0.6 || category === "not_electronic")) {
+          setStage(3); // Stop at product detection / fault analysis
+          setPendingConfirmation(true);
+          setLowConfidenceScore(confidenceVal);
+          setSelectedCategory(category !== "not_electronic" ? category : "smartphone");
+          setBusy(false);
+          return;
+        }
+
+        // Confirmed or High-confidence: proceed to RDE scoring & R5 recommendation
+        setPendingConfirmation(false);
+        setStage(4);
+
         const visionLegacy: VisionAnalysis = {
           product: pipelineResponse.gemini_output.product_name,
           brandGuess: pipelineResponse.gemini_output.likely_model,
-          category: "Electronics",
+          category: CATEGORY_LABELS[category as EWasteCategory] || category,
           condition: pipelineResponse.gemini_output.visible_condition,
           faults: pipelineResponse.gemini_output.possible_faults,
           detectedComponents: [
@@ -171,22 +206,28 @@ export function ScanFlow() {
           ],
           repairability: pipelineResponse.recommendation.repairability_score,
           ageYearsEstimate: 3,
-          repairCostInr: pipelineResponse.rde_output.cost_ratio > 0 ? Math.round(pipelineResponse.rde_output.cost_ratio * 25000) : 1400,
+          repairCostInr:
+            pipelineResponse.rde_output.cost_ratio > 0
+              ? Math.round(pipelineResponse.rde_output.cost_ratio * 25000)
+              : 1400,
           replacementCostInr: 25000,
           componentAvailability: 0.85,
           remainingLifeYears: 2.5,
           componentValue: 0.55,
           notes: pipelineResponse.recommendation.headline,
           ruleResult: {
-            lowConfidence: pipelineResponse.gemini_output.confidence === "low",
+            lowConfidence: confidenceVal < 0.6,
             prediction: {
-              device: { name: pipelineResponse.gemini_output.product_name, confidence: 0.9 },
+              device: { name: pipelineResponse.gemini_output.product_name, confidence: confidenceVal },
               component: { name: "Primary Component", confidence: 0.85 },
               condition: { name: pipelineResponse.gemini_output.visible_condition, confidence: 0.85 },
             },
             fault: pipelineResponse.gemini_output.possible_faults[0] || "Physical Condition Issue",
             severity: pipelineResponse.recommendation.requires_human_inspection ? "High" : "Medium",
-            five_r: (pipelineResponse.recommendation.r5_category.toUpperCase() as any) === "REDUCE" ? "REPAIR" : (pipelineResponse.recommendation.r5_category.toUpperCase() as any),
+            five_r:
+              (pipelineResponse.recommendation.r5_category.toUpperCase() as any) === "REDUCE"
+                ? "REPAIR"
+                : (pipelineResponse.recommendation.r5_category.toUpperCase() as any),
             recommendation: pipelineResponse.recommendation.headline,
             safety_warning: pipelineResponse.recommendation.requires_human_inspection
               ? "⚠️ Requires bench testing at a Skill Center before powering on."
@@ -196,11 +237,12 @@ export function ScanFlow() {
         };
 
         setAnalysis(visionLegacy);
-        setStage(4);
 
         const rdeLegacy: RdeResult = {
           score: pipelineResponse.recommendation.repairability_score,
-          action: (pipelineResponse.recommendation.r5_category.toUpperCase() === "REDUCE" ? "REPAIR" : pipelineResponse.recommendation.r5_category.toUpperCase()) as any,
+          action: (pipelineResponse.recommendation.r5_category.toUpperCase() === "REDUCE"
+            ? "REPAIR"
+            : pipelineResponse.recommendation.r5_category.toUpperCase()) as any,
           headline: pipelineResponse.recommendation.headline,
           reasoning: pipelineResponse.recommendation.reasoning,
           costRatio: pipelineResponse.rde_output.cost_ratio,
@@ -210,7 +252,7 @@ export function ScanFlow() {
           setTimeout(() => {
             setStage(5);
             setResult(rdeLegacy);
-          }, 600),
+          }, 400),
         ];
       } catch (e) {
         timers.current.forEach(clearTimeout);
@@ -220,7 +262,7 @@ export function ScanFlow() {
         setBusy(false);
       }
     },
-    [customApiKey, userFaultDescription],
+    [],
   );
 
   const handleRefine = async (device: string, component: string, condition: string) => {
@@ -229,7 +271,7 @@ export function ScanFlow() {
     const newRule = await evaluateRuleEngine({
       device: { name: device, confidence: 0.95 },
       component: { name: component, confidence: 0.92 },
-      condition: { name: condition, confidence: 0.90 },
+      condition: { name: condition, confidence: 0.9 },
     });
 
     const updatedVision: VisionAnalysis = {
@@ -261,19 +303,12 @@ export function ScanFlow() {
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setError("Please choose an image file.");
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      setError("Image is larger than 8MB — please use a smaller photo.");
+    if (!file.type.startsWith("image/") && !file.name.match(/\.(heic|heif|png|jpg|jpeg|webp)$/i)) {
+      setError("Please choose a valid image file (JPEG, PNG, HEIC, WebP).");
       return;
     }
     stopCamera();
-    setPreview(URL.createObjectURL(file));
-    const url = await readAsDataUrl(file);
-    setDataUrl(url);
-    void analyze(url);
+    await processAndSetImage(file);
   };
 
   return (
@@ -310,7 +345,7 @@ export function ScanFlow() {
                   className="mx-auto max-h-72 w-auto rounded-xl object-contain"
                 />
                 <div className="mt-4 flex flex-wrap justify-center gap-3">
-                  <Button variant="hero" size="lg" onClick={capturePhoto}>
+                  <Button variant="hero" size="lg" onClick={() => void capturePhoto()}>
                     <Camera className="h-4 w-4" /> Capture Photo
                   </Button>
                   <Button variant="ghost" size="lg" onClick={stopCamera}>
@@ -337,8 +372,8 @@ export function ScanFlow() {
                   Upload a photo of your broken product
                 </p>
                 <p className="max-w-sm text-sm text-muted-foreground">
-                  Drag and drop, choose a file, or use your camera. The photo is sent once to Gemini
-                  Vision for identification and never stored.
+                  Drag and drop, choose a file, or use your camera. Photos are automatically resized and
+                  sent securely to Gemini Vision.
                 </p>
               </div>
             )}
@@ -347,24 +382,15 @@ export function ScanFlow() {
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             className="hidden"
             onChange={(e) => void onFile(e.target.files?.[0])}
           />
 
           <div className="relative mt-5 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
-                Optional Fault Description & Symptoms
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowKeyInput(!showKeyInput)}
-                className="text-[0.7rem] font-semibold text-emerald hover:underline flex items-center gap-1"
-              >
-                <Key className="h-3 w-3" /> {showKeyInput ? "Hide API Key" : "Configure Gemini API Key"}
-              </button>
-            </div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
+              Optional Fault Description & Symptoms
+            </label>
             <input
               type="text"
               placeholder="e.g. Battery swelling, screen digitizer cracked, charging port loose..."
@@ -373,33 +399,6 @@ export function ScanFlow() {
               className="w-full rounded-xl border border-input bg-background/80 px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald"
             />
           </div>
-
-          {showKeyInput && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              className="relative mt-3 rounded-xl border border-emerald/30 bg-emerald/5 p-3 space-y-2"
-            >
-              <div className="flex items-center justify-between text-xs font-semibold text-emerald">
-                <span>🔑 Custom Gemini Vision API Key (Optional)</span>
-                {customApiKey ? (
-                  <span className="text-[0.65rem] bg-emerald/20 px-2 py-0.5 rounded text-emerald">Key Saved</span>
-                ) : (
-                  <span className="text-[0.65rem] text-muted-foreground">Auto-Fallback Vision Enabled</span>
-                )}
-              </div>
-              <input
-                type="password"
-                placeholder="Paste Gemini API Key (AIzaSy...)"
-                value={customApiKey}
-                onChange={(e) => saveApiKey(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald"
-              />
-              <p className="text-[0.68rem] text-muted-foreground">
-                If left blank, ReLife AI automatically uses system Vision APIs + local ML model inference.
-              </p>
-            </motion.div>
-          )}
 
           <div className="relative mt-4 flex flex-wrap gap-3">
             <Button
@@ -418,12 +417,14 @@ export function ScanFlow() {
             >
               <Camera className="h-4 w-4" /> Use Camera
             </Button>
-            {dataUrl && (
+            {processedBase64 && (
               <Button
                 variant="ghost"
                 size="lg"
                 disabled={busy}
-                onClick={() => void analyze(dataUrl)}
+                onClick={() =>
+                  void analyze(processedBase64, processedMimeType, userFaultDescription)
+                }
               >
                 <RefreshCw className={cn("h-4 w-4", busy && "animate-spin")} /> Re-analyze
               </Button>
@@ -431,10 +432,66 @@ export function ScanFlow() {
           </div>
 
           {error && (
-            <p className="relative mt-4 flex items-start gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-lime" />
-              {error}
-            </p>
+            <div className="relative mt-4 flex items-start gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+              <div>
+                <p className="font-semibold text-rose-200">Vision Analysis Error</p>
+                <p className="mt-0.5 text-xs text-rose-300/90">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Low Confidence Category Selection Fallback Dropdown (Requirement 5) */}
+          {pendingConfirmation && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="relative mt-5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5 text-amber-200"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
+                <div className="w-full">
+                  <h3 className="font-display text-base font-semibold text-amber-300">
+                    Low Confidence Object Identification ({Math.round((lowConfidenceScore || 0) * 100)}%)
+                  </h3>
+                  <p className="mt-1 text-xs text-amber-200/90">
+                    Gemini Vision identified this object with low confidence. Please confirm or select the correct e-waste category below before running RDE scoring:
+                  </p>
+
+                  <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <select
+                      value={selectedCategory}
+                      onChange={(e) => setSelectedCategory(e.target.value as EWasteCategory)}
+                      className="rounded-xl border border-amber-500/40 bg-background px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    >
+                      {EWASTE_CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {CATEGORY_LABELS[cat] || cat}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      variant="hero"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        if (processedBase64) {
+                          void analyze(
+                            processedBase64,
+                            processedMimeType,
+                            userFaultDescription,
+                            selectedCategory
+                          );
+                        }
+                      }}
+                      className="shrink-0"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-1.5" /> Confirm Category & Run RDE
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           )}
         </div>
 
@@ -538,41 +595,6 @@ function ResultCard({
   const pred = rule.prediction;
   const saved = Math.max(0, analysis.replacementCostInr - analysis.repairCostInr);
 
-  if (rule.lowConfidence) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="card-surface mt-6 p-6 border-amber-500/40 bg-amber-500/10 text-amber-200 rounded-2xl"
-      >
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
-          <div className="w-full">
-            <h3 className="font-display text-lg font-semibold text-amber-300">
-              Low Confidence / Unclear Object Detection
-            </h3>
-            <p className="mt-1 text-sm text-amber-200/90">{rule.confidenceMessage}</p>
-            
-            <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-amber-300">
-              Select your electronic device & component to run 5R Analysis:
-            </p>
-            <div className="mt-2.5 flex flex-wrap gap-2">
-              {REFINEMENT_PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  onClick={() => onRefine(p.device, p.component, p.condition)}
-                  className="rounded-lg border border-amber-500/40 bg-amber-500/20 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/30 transition-colors"
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    );
-  }
-
   const get5REmoji = (action: string) => {
     switch (action) {
       case "Recycle":
@@ -619,7 +641,7 @@ function ResultCard({
             </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <Stat
-                label="Device"
+                label="Device Category"
                 value={`${pred.device.name}`}
                 sub={`${Math.round(pred.device.confidence * 100)}% confidence`}
               />
@@ -761,4 +783,3 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
     </div>
   );
 }
-

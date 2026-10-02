@@ -401,8 +401,36 @@ export function AdminPanel() {
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (!jobErr && jobData && jobData.length > 0) {
-        setApplications(jobData as JobApplicationRecord[]);
+      let localApps: JobApplicationRecord[] = [];
+      try {
+        const stored = localStorage.getItem("relife_job_applications");
+        if (stored) {
+          localApps = JSON.parse(stored);
+        }
+      } catch (e) {
+        console.warn("Local storage job_applications read error", e);
+      }
+
+      const remoteApps = !jobErr && jobData ? (jobData as JobApplicationRecord[]) : [];
+      const appMap = new Map<string, JobApplicationRecord>();
+
+      // Remote apps from Supabase
+      remoteApps.forEach((app) => appMap.set(app.id, app));
+      // Local apps cache
+      localApps.forEach((app) => {
+        if (!appMap.has(app.id)) {
+          appMap.set(app.id, app);
+        }
+      });
+
+      const mergedApplications = Array.from(appMap.values()).sort(
+        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      );
+
+      if (mergedApplications.length > 0) {
+        setApplications(mergedApplications);
+      } else {
+        setApplications(SEED_CAREERS);
       }
 
       // 3. Fault Rules
@@ -546,7 +574,15 @@ export function AdminPanel() {
 
   // --- Job Application Actions ---
   const handleUpdateApplicationStatus = async (id: string, newStatus: string) => {
-    setApplications((prev) => prev.map((a) => (a.id === id ? { ...a, status: newStatus } : a)));
+    setApplications((prev) => {
+      const updated = prev.map((a) => (a.id === id ? { ...a, status: newStatus } : a));
+      try {
+        localStorage.setItem("relife_job_applications", JSON.stringify(updated));
+      } catch (e) {
+        console.warn("LocalStorage status update error", e);
+      }
+      return updated;
+    });
 
     try {
       await (supabase.from as any)("job_applications").update({ status: newStatus }).eq("id", id);
@@ -558,7 +594,16 @@ export function AdminPanel() {
   };
 
   const handleDeleteApplication = async (id: string) => {
-    setApplications((prev) => prev.filter((a) => a.id !== id));
+    setApplications((prev) => {
+      const updated = prev.filter((a) => a.id !== id);
+      try {
+        localStorage.setItem("relife_job_applications", JSON.stringify(updated));
+      } catch (e) {
+        console.warn("LocalStorage delete error", e);
+      }
+      return updated;
+    });
+
     try {
       await (supabase.from as any)("job_applications").delete().eq("id", id);
       toast.success("Job application removed");

@@ -4,9 +4,11 @@ import { evaluateRuleEngine, RuleEngineResult } from "./rule-engine";
 import {
   evaluateRDE,
   GeminiVisionOutput,
-  GeminiConfidence,
   RdeEvaluationResult,
   R5Category,
+  EWASTE_CATEGORIES,
+  EWasteCategory,
+  CATEGORY_LABELS,
 } from "./rde";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -43,11 +45,11 @@ export interface VisionAnalysis {
  * Validate image payload & quality before passing to Gemini Vision API
  */
 export function validateImageQuality(base64Image: string): ImageValidationResult {
-  if (!base64Image || base64Image.length < 1200) {
+  if (!base64Image || base64Image.length < 500) {
     return {
       isValid: false,
       quality_score: 10,
-      reason: "Image resolution or data payload is corrupt/too low. Please capture or upload a clear photo of the electronic product.",
+      reason: "Image data payload is missing or too small. Please select or capture a photo.",
       is_blurry: true,
     };
   }
@@ -57,11 +59,11 @@ export function validateImageQuality(base64Image: string): ImageValidationResult
   const uniqueChars = new Set(sample).size;
   const varianceRatio = uniqueChars / 64; // base64 charset
 
-  if (varianceRatio < 0.25) {
+  if (varianceRatio < 0.20) {
     return {
       isValid: false,
       quality_score: 25,
-      reason: "Photo appears extremely low-contrast, dark, or blurry. Ensure adequate lighting and focus directly on the device.",
+      reason: "Photo appears extremely low-contrast, dark, or blank. Ensure adequate lighting and focus on the device.",
       is_too_dark: true,
     };
   }
@@ -73,9 +75,11 @@ export function validateImageQuality(base64Image: string): ImageValidationResult
 }
 
 const PipelineInputSchema = z.object({
-  /** data:image/...;base64,... */
-  image: z.string().min(32).max(12_000_000),
+  /** base64 encoded image string (without data: prefix or with it) */
+  image: z.string().min(32),
+  mimeType: z.string().optional(),
   user_fault_description: z.string().optional(),
+  confirmed_category: z.string().optional(),
   user_id: z.string().optional(),
   apiKey: z.string().optional(),
   estimated_repair_cost: z.number().optional(),
@@ -83,58 +87,36 @@ const PipelineInputSchema = z.object({
 });
 
 // ============================================================================
-// 2. AI ANALYSIS MODULE (Multi-API Vision Engine & Real Pixel Analyzer)
+// 2. AI ANALYSIS MODULE (Gemini Vision Server-Side API Call)
 // ============================================================================
-const GEMINI_SYSTEM_PROMPT = `You are ReLife AI ML Vision Classifier, an expert electronic device & circular e-waste inspection engine.
+export const EWASTE_PROMPT = `Act as an e-waste identification expert. Examine the provided photo and identify the main object.
+Select the category ONLY from the following allowed enum list:
+[smartphone, laptop, tablet, desktop_pc, monitor, television, keyboard, mouse, printer, router, charger_adapter, power_bank, headphones_earbuds, speaker, camera, battery, circuit_board, cables_wires, appliance_small, appliance_large, other_electronic, not_electronic].
 
-CRITICAL REQUIREMENT - OBJECT & PERSON DETECTION:
-1. Examine the image carefully. FIRST check if an electronic device, gadget, appliance, printed circuit board, battery, charger, display, port, or e-waste component is present in the photo.
-2. IF THE PHOTO CONTAINS A HUMAN FACE, PERSON, SELFIE, CLOTHING, ANIMAL, PLANT, WALL, FOOD, OR NON-ELECTRONIC OBJECT ONLY (and NO electronic device/component is present):
-   You MUST return:
-   {
-     "is_electronic_device": false,
-     "product_name": "Non-Electronic Subject (Person / Face Detected)",
-     "likely_model": "Non-Electronic Object",
-     "visible_condition": "No electronic device recognized in photo. Photo contains a person or non-electronic subject.",
-     "possible_faults": ["Scan Rejected: No Electronic Device Present"],
-     "confidence": "low",
-     "requires_human_inspection": true
-   }
-
-3. IF AN ELECTRONIC DEVICE OR COMPONENT IS VISIBLE IN THE PHOTO:
-   Set "is_electronic_device": true and return structured JSON with exact keys:
-   {
-     "is_electronic_device": true,
-     "product_name": string (e.g. "Laptop", "Smartphone", "Lithium Battery", "Charger Cable", "Circuit Board", "Television"),
-     "likely_model": string (e.g. "Dell XPS 15", "iPhone 12", "Type-C Adapter", "Generic Electronics"),
-     "visible_condition": string (e.g. "Battery Swollen & Gas Buildup", "Screen Glass Fractured", "Port Moisture Corrosion", "Insulation Wire Frayed", "Thermal Dust Obstruction"),
-     "possible_faults": [string array of detected or inferred physical/electrical faults],
-     "confidence": "high" | "medium" | "low",
-     "requires_human_inspection": boolean
-   }
-
-RULE FOR "requires_human_inspection":
-Be conservative: default "requires_human_inspection" to true whenever the fault could involve internal circuitry, swollen lithium batteries, electrical short hazards, liquid ingress, or cannot be 100% confirmed by a photo alone.`;
+Rules:
+1. Identify the main electronic device, component, or gadget.
+2. Treat damaged, dusty, opened, corroded, or partially disassembled devices as electronics.
+3. If unsure, pick the closest category with lower confidence score.
+4. If the photo contains ONLY a human face, person, clothing, animal, plant, or non-electronic item, set category to "not_electronic".
+5. Take the user's optional fault description into account.`;
 
 /**
- * Call Google Gemini Vision REST API with multi-model fallback (gemini-2.0-flash, gemini-1.5-flash, etc.)
+ * Call Google Gemini Vision REST API server-side with structured JSON schema
  */
-async function callGeminiVisionModule(
-  base64DataUrl: string,
-  userFaultDescription: string,
-  apiKey: string
+export async function callGeminiVisionModule(
+  base64Data: string,
+  userFaultDescription: string = "",
+  apiKey: string,
+  mimeType: string = "image/jpeg"
 ): Promise<GeminiVisionOutput> {
-  const base64Data = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
-  const mimeMatch = base64DataUrl.match(/^data:(image\/\w+);base64,/);
-  const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+  // Ensure base64 string is clean without data: prefix
+  const cleanBase64 = base64Data.includes(",") ? base64Data.split(",")[1] || base64Data : base64Data;
 
-  const promptText = `${GEMINI_SYSTEM_PROMPT}
+  const promptText = `${EWASTE_PROMPT}
 
-USER FAULT DESCRIPTION: "${userFaultDescription || "No additional text provided."}"
+User Fault Description: "${userFaultDescription.trim() || "None provided"}"`;
 
-Examine photo carefully, perform electronic product & component fault detection, and output valid minified JSON only.`;
-
-  const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"];
+  const models = ["gemini-1.5-flash", "gemini-2.0-flash"];
   let lastError: Error | null = null;
 
   for (const model of models) {
@@ -142,7 +124,7 @@ Examine photo carefully, perform electronic product & component fault detection,
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
             {
@@ -150,282 +132,109 @@ Examine photo carefully, perform electronic product & component fault detection,
                 { text: promptText },
                 {
                   inline_data: {
-                    mime_type: mimeType,
-                    data: base64Data,
+                    mime_type: mimeType || "image/jpeg",
+                    data: cleanBase64,
                   },
                 },
               ],
             },
           ],
           generationConfig: {
+            temperature: 0.1,
             response_mime_type: "application/json",
-            temperature: 0.2,
+            response_schema: {
+              type: "OBJECT",
+              properties: {
+                category: {
+                  type: "STRING",
+                  enum: [...EWASTE_CATEGORIES],
+                },
+                brand_model: { type: "STRING" },
+                visible_damage: {
+                  type: "ARRAY",
+                  items: { type: "STRING" },
+                },
+                likely_fault: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+              },
+              required: ["category", "brand_model", "visible_damage", "likely_fault", "confidence"],
+            },
           },
         }),
       });
 
-      if (res.ok) {
-        const json = await res.json();
-        const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-        const match = text.match(/\{[\s\S]*\}/);
-        if (match) {
-          const parsed = JSON.parse(match[0]);
-          return {
-            is_electronic_device: parsed.is_electronic_device !== false,
-            product_name: parsed.product_name || "Electronic Device",
-            likely_model: parsed.likely_model || "Generic Model",
-            visible_condition: parsed.visible_condition || "Visible Damage Detected",
-            possible_faults: Array.isArray(parsed.possible_faults) ? parsed.possible_faults : ["Physical Condition Issue"],
-            confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "medium",
-            requires_human_inspection: parsed.requires_human_inspection !== false,
-          };
+      if (!res.ok) {
+        let errMessage = "";
+        try {
+          const errBody = await res.json();
+          errMessage = errBody.error?.message || JSON.stringify(errBody);
+        } catch {
+          errMessage = res.statusText;
+        }
+
+        if (res.status === 400) {
+          throw new Error(`Gemini API Error (400 Bad Request): ${errMessage}`);
+        } else if (res.status === 401 || res.status === 403) {
+          throw new Error(`Gemini API Error (401/403 Invalid API Key): ${errMessage}`);
+        } else if (res.status === 429) {
+          throw new Error(`Gemini API Quota Exceeded (429): Rate limit reached. ${errMessage}`);
+        } else {
+          throw new Error(`Gemini API HTTP ${res.status}: ${errMessage}`);
         }
       }
+
+      const json = await res.json();
+
+      // Log raw response on server in development
+      if (process.env["NODE_ENV"] !== "production") {
+        console.log(`[Gemini Vision Raw Response (${model})]:`, JSON.stringify(json, null, 2));
+      }
+
+      const candidateText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!candidateText) {
+        throw new Error("Gemini API returned empty output or content safety block.");
+      }
+
+      const parsed = JSON.parse(candidateText);
+      const category = (parsed.category || "other_electronic") as EWasteCategory;
+      const isElectronic = category !== "not_electronic";
+      const confidenceNum = typeof parsed.confidence === "number" ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5;
+      const brandModel = parsed.brand_model || "Generic Device";
+      const visibleDamages: string[] = Array.isArray(parsed.visible_damage) ? parsed.visible_damage : ["Physical Wear"];
+      const likelyFault = parsed.likely_fault || "General Component Fault";
+      const categoryLabel = CATEGORY_LABELS[category] || category;
+
+      return {
+        is_electronic_device: isElectronic,
+        category,
+        brand_model: brandModel,
+        visible_damage: visibleDamages,
+        likely_fault: likelyFault,
+        product_name: categoryLabel,
+        likely_model: brandModel,
+        visible_condition: visibleDamages.join("; "),
+        possible_faults: [likelyFault, ...visibleDamages],
+        confidence: confidenceNum,
+        requires_human_inspection: isElectronic && (confidenceNum < 0.75 || visibleDamages.length > 0),
+      };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-    }
-  }
-
-  throw lastError || new Error("Failed to get valid JSON response from Gemini Vision API");
-}
-
-/**
- * Call Local FastAPI ML Inference Server (YOLOv8) if running at http://localhost:8000/predict
- */
-async function callLocalMLServer(base64Image: string): Promise<GeminiVisionOutput | null> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
-    const res = await fetch("http://localhost:8000/predict", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: base64Image }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.device) {
-        return {
-          is_electronic_device: data.isElectronicDevice !== false,
-          product_name: data.device?.name || "Electronic Device",
-          likely_model: data.notes || "YOLO Trained E-Waste Model",
-          visible_condition: data.condition?.name || "Physical Surface Damage",
-          possible_faults: [data.component?.name ? `${data.component.name} Issue` : "Electronic Component Fault"],
-          confidence: data.device?.confidence > 0.8 ? "high" : "medium",
-          requires_human_inspection: true,
-        };
+      // Re-throw immediately if it's an API key or quota issue
+      if (
+        lastError.message.includes("401") ||
+        lastError.message.includes("403") ||
+        lastError.message.includes("429")
+      ) {
+        throw lastError;
       }
     }
-  } catch {
-    // Local ML Server unavailable
-  }
-  return null;
-}
-
-/**
- * Call HuggingFace Serverless Vision Inference API
- */
-async function callHuggingFaceVisionAPI(base64DataUrl: string): Promise<GeminiVisionOutput | null> {
-  try {
-    const base64Data = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
-    const mimeMatch = base64DataUrl.match(/^data:(image\/\w+);base64,/);
-    const mimeType: string = mimeMatch && mimeMatch[1] ? mimeMatch[1] : "image/jpeg";
-    const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
-
-    const res = await fetch("https://api-inference.huggingface.co/models/google/vit-base-patch16-224", {
-      method: "POST",
-      headers: { "Content-Type": mimeType } as Record<string, string>,
-      body: binaryData,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const results = await res.json();
-      if (Array.isArray(results) && results.length > 0) {
-        const topLabel = (results[0].label || "").toLowerCase();
-        const topScore = results[0].score || 0.5;
-
-        // Check if top label is person/face/human
-        if (topLabel.includes("person") || topLabel.includes("face") || topLabel.includes("man") || topLabel.includes("woman")) {
-          return {
-            is_electronic_device: false,
-            product_name: "Non-Electronic Subject (Person / Face Detected)",
-            likely_model: "Non-Electronic Object",
-            visible_condition: "No electronic device recognized in photo. Photo contains a person or non-electronic subject.",
-            possible_faults: ["Scan Rejected: No Electronic Device Present"],
-            confidence: "low",
-            requires_human_inspection: true,
-          };
-        }
-
-        let product = "Electronic Device";
-        if (topLabel.includes("cellular") || topLabel.includes("phone") || topLabel.includes("handheld")) product = "Smartphone";
-        else if (topLabel.includes("notebook") || topLabel.includes("laptop") || topLabel.includes("computer")) product = "Laptop";
-        else if (topLabel.includes("screen") || topLabel.includes("monitor") || topLabel.includes("television")) product = "Display Panel";
-        else if (topLabel.includes("keyboard") || topLabel.includes("mouse")) product = "Computer Peripheral";
-
-        return {
-          is_electronic_device: true,
-          product_name: product,
-          likely_model: `Model: ${results[0].label}`,
-          visible_condition: "Physical Surface Wear & Operational Fault",
-          possible_faults: ["Component Wear & Tear", "HuggingFace Vision Classification match"],
-          confidence: topScore > 0.6 ? "high" : "medium",
-          requires_human_inspection: true,
-        };
-      }
-    }
-  } catch {
-    // HuggingFace call timed out or failed
-  }
-  return null;
-}
-
-/**
- * Real Base64 Image Pixel & Visual Spectrum Analyzer (offline / local visual detection engine)
- */
-function analyzeRealImagePixels(base64DataUrl: string, userFaultDesc: string): GeminiVisionOutput {
-  const descLower = userFaultDesc.toLowerCase();
-  const cleanB64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
-
-  let rawBytes: Uint8Array;
-  try {
-    if (typeof Buffer !== "undefined") {
-      rawBytes = Uint8Array.from(Buffer.from(cleanB64, "base64"));
-    } else {
-      const binaryString = atob(cleanB64);
-      rawBytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        rawBytes[i] = binaryString.charCodeAt(i);
-      }
-    }
-  } catch {
-    rawBytes = new Uint8Array(0);
   }
 
-  let skinToneCount = 0;
-  let pcbGreenCount = 0;
-  let darkGlassCount = 0;
-  let metallicCount = 0;
-  let totalSampled = 0;
-
-  const len = rawBytes.length;
-  const step = Math.max(3, Math.floor(len / 4000) * 3);
-
-  for (let i = 0; i < len - 2; i += step) {
-    const r = rawBytes[i] ?? 0;
-    const g = rawBytes[i + 1] ?? 0;
-    const b = rawBytes[i + 2] ?? 0;
-    totalSampled++;
-
-    // 1. Human skin tone signature check
-    if (r > 60 && r > g && g > b && (r - g) > 12 && (g - b) > 8) {
-      skinToneCount++;
-    }
-    // 2. Circuit Board Green Solder Mask signature check
-    else if (g > 50 && g > r * 1.15 && g > b * 1.15) {
-      pcbGreenCount++;
-    }
-    // 3. Dark OLED / Glass display panel signature check
-    else if (r < 45 && g < 45 && b < 45) {
-      darkGlassCount++;
-    }
-    // 4. Metallic aluminum / silver chassis signature check
-    else if (Math.abs(r - g) < 15 && Math.abs(g - b) < 15 && r > 100) {
-      metallicCount++;
-    }
-  }
-
-  const sampleDenom = Math.max(1, totalSampled);
-  const skinRatio = skinToneCount / sampleDenom;
-  const pcbRatio = pcbGreenCount / sampleDenom;
-  const glassRatio = darkGlassCount / sampleDenom;
-  const metallicRatio = metallicCount / sampleDenom;
-
-  // 1. Human Face / Selfie / Non-Electronic Detection
-  if (skinRatio > 0.45 && pcbRatio < 0.08 && glassRatio < 0.25 && !descLower.match(/(laptop|phone|battery|circuit|screen|pcb|gpu|motherboard|wire|charger)/)) {
-    return {
-      is_electronic_device: false,
-      product_name: "Non-Electronic Subject (Person / Face Detected)",
-      likely_model: "Non-Electronic Object",
-      visible_condition: "No electronic device recognized in photo. Photo contains a person or non-electronic subject.",
-      possible_faults: ["Scan Rejected: No Electronic Device Present"],
-      confidence: "low",
-      requires_human_inspection: true,
-    };
-  }
-
-  // 2. Printed Circuit Board / Motherboard Detection
-  if (pcbRatio > 0.12 || descLower.includes("pcb") || descLower.includes("circuit") || descLower.includes("board")) {
-    return {
-      is_electronic_device: true,
-      product_name: "Printed Circuit Board (PCB)",
-      likely_model: "Mainboard / Controller Assembly",
-      visible_condition: pcbRatio > 0.2 ? "Corrosion & Thermal Stress Discoloration" : "Solder Trace & Component Wear",
-      possible_faults: ["Solder Joint Fracture", "Thermal Overheating", "SMD Component Ingress"],
-      confidence: "high",
-      requires_human_inspection: true,
-    };
-  }
-
-  // 3. Display / Smartphone Detection
-  if (glassRatio > 0.30 || descLower.includes("screen") || descLower.includes("display") || descLower.includes("phone")) {
-    return {
-      is_electronic_device: true,
-      product_name: descLower.includes("phone") ? "Smartphone" : "Display Panel",
-      likely_model: "OLED / LCD Screen Digitizer",
-      visible_condition: descLower.includes("cracked") || glassRatio > 0.45 ? "Cracked Front Glass Matrix" : "Display Wear & Bezel Stress",
-      possible_faults: ["Glass Digitizer Fracture", "Panel Touch Sensor Failure", "Backlight Inverter Fault"],
-      confidence: "high",
-      requires_human_inspection: false,
-    };
-  }
-
-  // 4. Laptop / Metallic Device Detection
-  if (metallicRatio > 0.25 || descLower.includes("laptop") || descLower.includes("macbook") || descLower.includes("computer")) {
-    return {
-      is_electronic_device: true,
-      product_name: "Laptop Computer",
-      likely_model: "Portable Personal Computer",
-      visible_condition: descLower.includes("battery") ? "Swollen Lower Chassis" : "Chassis Wear & Fan Dust Obstruction",
-      possible_faults: ["Thermal Dust Accumulation", "Battery Health Degradation", "Hinge & Port Mechanical Wear"],
-      confidence: "high",
-      requires_human_inspection: true,
-    };
-  }
-
-  // 5. Battery Pack / Charger / Cable Detection
-  if (descLower.includes("battery") || descLower.includes("charger") || descLower.includes("cable") || descLower.includes("swollen")) {
-    return {
-      is_electronic_device: true,
-      product_name: descLower.includes("battery") ? "Lithium Battery Pack" : "Power Adapter / Cable",
-      likely_model: descLower.includes("battery") ? "Rechargeable Lithium Cell" : "AC/DC Power Unit",
-      visible_condition: descLower.includes("swollen") ? "Swollen & Deformed Cell Housing" : "Insulation Strain & Terminal Oxidation",
-      possible_faults: ["Lithium Cell Gas Buildup", "Thermal Overheating Hazard", "Insulation Fatigue"],
-      confidence: "high",
-      requires_human_inspection: true,
-    };
-  }
-
-  // Default Electronic Device Detection for general electronic items
-  return {
-    is_electronic_device: true,
-    product_name: "Electronic Device / Appliance",
-    likely_model: "Consumer Electronic Product",
-    visible_condition: "Physical Surface Wear & Operational Fault",
-    possible_faults: ["Component Wear & Tear", "Internal Power Supply Degradation"],
-    confidence: "medium",
-    requires_human_inspection: true,
-  };
+  throw lastError || new Error("Failed to reach Gemini Vision API.");
 }
 
 // ============================================================================
-// 5. OUTPUT LAYER & END-TO-END PIPELINE SERVER FUNCTION
+// 3. OUTPUT LAYER & END-TO-END PIPELINE SERVER FUNCTION
 // ============================================================================
 export interface ReLifePipelineResult {
   scan_id: string;
@@ -444,8 +253,6 @@ export interface ReLifePipelineResult {
 
 /**
  * FULL END-TO-END RELIFE AI PIPELINE SERVER FUNCTION
- *
- * Flow: Faulty Product → Image/Info → Fault Extraction → Gemini Vision AI → RDE Scorer → R5 Evaluation → Recommendation & DB Persistence
  */
 export const runReLifePipeline = createServerFn({ method: "POST" })
   .validator((data: unknown) => PipelineInputSchema.parse(data))
@@ -455,95 +262,55 @@ export const runReLifePipeline = createServerFn({ method: "POST" })
     // STEP 1: Input Layer & Image Quality Validation
     const imageVal = validateImageQuality(data.image);
     if (!imageVal.isValid) {
-      const fallbackGemini: GeminiVisionOutput = {
-        product_name: "Unrecognized Image",
-        likely_model: "Unknown",
-        visible_condition: "Blurry or Low Quality Image",
-        possible_faults: ["Image Quality Rejection"],
-        confidence: "low",
-        requires_human_inspection: true,
-      };
-
-      const fallbackRde = evaluateRDE(fallbackGemini, {
-        estimated_repair_cost: 0,
-        estimated_replace_cost: 1000,
-        component_condition_ratings: { "Image": 10 },
-        remaining_life_estimate_years: 0,
-        component_salvage_value_ratio: 0,
-        component_availability_ratio: 0,
-      });
-
-      return {
-        scan_id: scanId,
-        image_validation: imageVal,
-        gemini_output: fallbackGemini,
-        rde_output: fallbackRde,
-        recommendation: {
-          r5_category: "Recycle",
-          repairability_score: 0,
-          reasoning: [imageVal.reason || "Image quality check failed."],
-          requires_human_inspection: true,
-          headline: "Image rejected due to low quality or blur.",
-        },
-        persisted_to_db: false,
-      };
+      throw new Error(imageVal.reason || "Image quality validation failed.");
     }
 
-    // STEP 2: Multi-Tier AI Analysis Module (Gemini Vision -> Local YOLO ML -> HuggingFace -> Real Pixel Analyzer)
+    // STEP 2: Load Server-side Gemini API Key
     const apiKey =
-      data.apiKey ||
       process.env["GEMINI_API_KEY"] ||
       process.env["GOOGLE_GENERATIVE_AI_API_KEY"] ||
-      process.env["LOVABLE_API_KEY"] ||
-      process.env["VITE_GEMINI_API_KEY"];
+      process.env["VITE_GEMINI_API_KEY"] ||
+      data.apiKey;
 
-    let geminiResult: GeminiVisionOutput | null = null;
-
-    if (apiKey && apiKey !== "demo") {
-      try {
-        geminiResult = await callGeminiVisionModule(
-          data.image,
-          data.user_fault_description || "",
-          apiKey
-        );
-      } catch (err) {
-        console.warn("[Pipeline Gemini Module Notice]:", err);
-      }
+    if (!apiKey) {
+      throw new Error(
+        "Gemini API key is not configured on the server environment. Please set GEMINI_API_KEY in your .env file."
+      );
     }
 
-    if (!geminiResult) {
-      // Try Local ML Server (YOLOv8)
-      geminiResult = await callLocalMLServer(data.image);
+    // STEP 3: Execute Gemini Vision AI call
+    let geminiResult = await callGeminiVisionModule(
+      data.image,
+      data.user_fault_description || "",
+      apiKey,
+      data.mimeType || "image/jpeg"
+    );
+
+    // If user manually confirmed or changed category via low-confidence fallback dropdown
+    if (data.confirmed_category && EWASTE_CATEGORIES.includes(data.confirmed_category as EWasteCategory)) {
+      const confirmedCat = data.confirmed_category as EWasteCategory;
+      geminiResult = {
+        ...geminiResult,
+        category: confirmedCat,
+        is_electronic_device: confirmedCat !== "not_electronic",
+        product_name: CATEGORY_LABELS[confirmedCat] || confirmedCat,
+      };
     }
 
-    if (!geminiResult) {
-      // Try HuggingFace Serverless Vision API
-      geminiResult = await callHuggingFaceVisionAPI(data.image);
-    }
-
-    if (!geminiResult) {
-      // Real Base64 Pixel & Visual Spectrum Analyzer
-      geminiResult = analyzeRealImagePixels(data.image, data.user_fault_description || "");
-    }
-
-    // CHECK FOR NON-ELECTRONIC OBJECT / HUMAN FACE REJECTION
-    if (
-      geminiResult.is_electronic_device === false ||
-      geminiResult.product_name.includes("Non-Electronic") ||
-      geminiResult.product_name.includes("Person") ||
-      geminiResult.product_name.includes("Face")
-    ) {
+    // CHECK FOR NON-ELECTRONIC OBJECT REJECTION
+    if (geminiResult.category === "not_electronic" || geminiResult.is_electronic_device === false) {
       const nonElectronicVal: ImageValidationResult = {
         isValid: false,
         quality_score: 20,
-        reason: "⚠️ No electronic device detected in this photo. A person / face / non-electronic object was detected. Please capture or upload a clear photo of an electronic device (e.g. laptop, smartphone, charger, battery, circuit board).",
+        reason:
+          "⚠️ No electronic device detected in this photo. A non-electronic object or person was recognized. Please upload a photo of an electronic product (e.g. laptop, phone, charger, battery, circuit board).",
         is_blurry: false,
       };
 
       const fallbackRde = evaluateRDE(geminiResult, {
         estimated_repair_cost: 0,
         estimated_replace_cost: 1000,
-        component_condition_ratings: { "Object": 10 },
+        component_condition_ratings: { Object: 10 },
         remaining_life_estimate_years: 0,
         component_salvage_value_ratio: 0,
         component_availability_ratio: 0,
@@ -565,7 +332,7 @@ export const runReLifePipeline = createServerFn({ method: "POST" })
       };
     }
 
-    // STEP 3 & 4: ReLife Decision Engine (RDE) & R5 Evaluation Layer
+    // STEP 4: ReLife Decision Engine (RDE) & R5 Evaluation Layer
     const repairCost = data.estimated_repair_cost || 1400;
     const replaceCost = data.estimated_replace_cost || 25000;
 
@@ -583,7 +350,7 @@ export const runReLifePipeline = createServerFn({ method: "POST" })
       device_age_years: 3,
     });
 
-    // STEP 5: Database Persistence (Supabase / Firestore DB)
+    // STEP 5: Database Persistence
     let persisted = false;
     try {
       await (supabase.from as any)("scans").insert([
@@ -594,7 +361,7 @@ export const runReLifePipeline = createServerFn({ method: "POST" })
           likely_model: geminiResult.likely_model,
           visible_condition: geminiResult.visible_condition,
           possible_faults: geminiResult.possible_faults,
-          confidence: geminiResult.confidence,
+          confidence: String(geminiResult.confidence),
           requires_human_inspection: rdeResult.requires_human_inspection,
           repairability_score: rdeResult.repairability_score,
           r5_category: rdeResult.r5_category,
@@ -631,7 +398,7 @@ export const runReLifePipeline = createServerFn({ method: "POST" })
 
 // Keep backward compatibility for existing analyzeProductImage invocations
 const InputSchemaLegacy = z.object({
-  image: z.string().min(32).max(12_000_000),
+  image: z.string().min(32),
   apiKey: z.string().optional(),
 });
 
@@ -654,7 +421,7 @@ export const analyzeProductImage = createServerFn({ method: "POST" })
     return {
       product: pipelineRes.gemini_output.product_name,
       brandGuess: pipelineRes.gemini_output.likely_model,
-      category: "Electronics",
+      category: pipelineRes.gemini_output.category || "Electronics",
       condition: pipelineRes.gemini_output.visible_condition,
       faults: pipelineRes.gemini_output.possible_faults,
       detectedComponents: [

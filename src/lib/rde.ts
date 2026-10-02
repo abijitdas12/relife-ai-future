@@ -9,7 +9,59 @@
 
 export type R5Category = "Reduce" | "Reuse" | "Retrieve" | "Redesign" | "Recycle";
 export type R5Action = "REPAIR" | "REUSE" | "RETRIEVE" | "REDESIGN" | "RECYCLE";
-export type GeminiConfidence = "high" | "medium" | "low";
+export type GeminiConfidence = "high" | "medium" | "low" | number;
+
+export const EWASTE_CATEGORIES = [
+  "smartphone",
+  "laptop",
+  "tablet",
+  "desktop_pc",
+  "monitor",
+  "television",
+  "keyboard",
+  "mouse",
+  "printer",
+  "router",
+  "charger_adapter",
+  "power_bank",
+  "headphones_earbuds",
+  "speaker",
+  "camera",
+  "battery",
+  "circuit_board",
+  "cables_wires",
+  "appliance_small",
+  "appliance_large",
+  "other_electronic",
+  "not_electronic",
+] as const;
+
+export type EWasteCategory = (typeof EWASTE_CATEGORIES)[number];
+
+export const CATEGORY_LABELS: Record<EWasteCategory, string> = {
+  smartphone: "Smartphone / Mobile Phone",
+  laptop: "Laptop Computer",
+  tablet: "Tablet / iPad",
+  desktop_pc: "Desktop PC / Workstation",
+  monitor: "Monitor / Computer Display",
+  television: "Television / TV Display",
+  keyboard: "Keyboard",
+  mouse: "Mouse / Input Device",
+  printer: "Printer / Scanner",
+  router: "Router / Modem / Networking",
+  charger_adapter: "Charger / Power Adapter",
+  power_bank: "Power Bank / Portable Battery",
+  headphones_earbuds: "Headphones / Earbuds",
+  speaker: "Speaker / Audio System",
+  camera: "Camera / Camcorder",
+  battery: "Battery / Battery Pack",
+  circuit_board: "Circuit Board / PCB",
+  cables_wires: "Cables / Wires / Connectors",
+  appliance_small: "Small Home Appliance",
+  appliance_large: "Large Home Appliance",
+  other_electronic: "Other Electronic Device",
+  not_electronic: "Not an Electronic Object",
+};
 
 export interface RdeResult {
   score: number;
@@ -76,6 +128,10 @@ export const RDE_THRESHOLDS = {
 // ============================================================================
 export interface GeminiVisionOutput {
   is_electronic_device?: boolean;
+  category?: EWasteCategory;
+  brand_model?: string;
+  visible_damage?: string[];
+  likely_fault?: string;
   product_name: string;
   likely_model: string;
   visible_condition: string;

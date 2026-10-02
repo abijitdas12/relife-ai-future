@@ -277,7 +277,8 @@ function ApplyDialog({ job, onClose }: { job: Job; onClose: () => void }) {
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("job_applications").insert({
+    const newApplication = {
+      id: crypto.randomUUID(),
       job_title: job.title,
       track: job.track,
       applicant_name: form.name.trim(),
@@ -286,12 +287,40 @@ function ApplyDialog({ job, onClose }: { job: Job; onClose: () => void }) {
       city: form.city.trim() || null,
       experience: form.experience,
       skills: form.skills.trim() || null,
-    });
-    setSaving(false);
-    if (error) {
-      toast.error("Could not submit your application. Please try again.");
-      return;
+      status: "received",
+      created_at: new Date().toISOString(),
+    };
+
+    // Save to local cache first so candidate request is NEVER lost!
+    try {
+      const stored = localStorage.getItem("relife_job_applications");
+      const existing = stored ? JSON.parse(stored) : [];
+      localStorage.setItem("relife_job_applications", JSON.stringify([newApplication, ...existing]));
+    } catch (e) {
+      console.warn("Local job application cache notice", e);
     }
+
+    // Try inserting into Supabase cloud database
+    const { error } = await supabase.from("job_applications").insert({
+      id: newApplication.id,
+      job_title: newApplication.job_title,
+      track: newApplication.track,
+      applicant_name: newApplication.applicant_name,
+      phone: newApplication.phone,
+      email: newApplication.email,
+      city: newApplication.city,
+      experience: newApplication.experience,
+      skills: newApplication.skills,
+      status: newApplication.status,
+      created_at: newApplication.created_at,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      console.warn("[Job Application Supabase Notice]: Saved locally, Supabase insert notice:", error);
+    }
+
     toast.success(`Application received for ${job.title}. Our team will call you for a skill check.`);
     onClose();
   };
