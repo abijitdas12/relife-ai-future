@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Menu, ScanLine, X, User, LogOut, LayoutDashboard } from "lucide-react";
+import { Menu, ScanLine, X, User, LogOut, LayoutDashboard, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { BrandMark } from "./brand";
 import { ThemeToggle } from "./theme-toggle";
@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 type NavLink = {
   label: string;
-  to: "/" | "/dashboard";
+  to: "/" | "/dashboard" | "/admin";
   hash?: string;
 };
 
@@ -24,6 +24,7 @@ const links: NavLink[] = [
   { label: "Careers", to: "/", hash: "careers" },
   { label: "Impact", to: "/", hash: "impact" },
   { label: "Dashboard", to: "/dashboard" },
+  { label: "Admin", to: "/admin" },
 ];
 
 export function SiteNav() {

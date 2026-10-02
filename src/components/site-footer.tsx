@@ -3,7 +3,7 @@ import { Github, Instagram, Linkedin, Twitter, Youtube } from "lucide-react";
 import { BrandLockup } from "./brand";
 
 // Columns follow the same order the sections appear on the homepage.
-const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/signin"; hash?: string }[] }[] = [
+const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/signin" | "/dashboard" | "/admin"; hash?: string }[] }[] = [
   {
     title: "Platform",
     links: [
@@ -30,6 +30,7 @@ const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/si
       { label: "Book a Pickup", to: "/", hash: "pickup" },
       { label: "Careers", to: "/", hash: "careers" },
       { label: "Sign In", to: "/signin" },
+      { label: "Admin Panel", to: "/admin" },
     ],
   },
 ];
