@@ -89,16 +89,42 @@ const PipelineInputSchema = z.object({
 // ============================================================================
 // 2. AI ANALYSIS MODULE (Gemini Vision Server-Side API Call)
 // ============================================================================
-export const EWASTE_PROMPT = `Act as an e-waste identification expert. Examine the provided photo and identify the main object.
-Select the category ONLY from the following allowed enum list:
+export const EWASTE_PROMPT = `You are ReLife AI ML Vision Classifier, an expert electronic device inspector & e-waste identification engine.
+
+Examine the provided image carefully and identify the main object or component.
+Select the category STRICTLY from the allowed category enum list:
 [smartphone, laptop, tablet, desktop_pc, monitor, television, keyboard, mouse, printer, router, charger_adapter, power_bank, headphones_earbuds, speaker, camera, battery, circuit_board, cables_wires, appliance_small, appliance_large, other_electronic, not_electronic].
 
-Rules:
-1. Identify the main electronic device, component, or gadget.
-2. Treat damaged, dusty, opened, corroded, or partially disassembled devices as electronics.
-3. If unsure, pick the closest category with lower confidence score.
-4. If the photo contains ONLY a human face, person, clothing, animal, plant, or non-electronic item, set category to "not_electronic".
-5. Take the user's optional fault description into account.`;
+Visual Identification & Category Guidelines:
+- smartphone: Mobile phone, cell phone, touchscreen digitizer, phone back glass, camera bump.
+- laptop: Notebook PC, laptop keyboard, screen hinge, laptop battery tray, opened or closed laptop chassis.
+- tablet: iPad, slate touchscreen tablet.
+- desktop_pc: Computer tower, SMPS, CPU case, desktop computer chassis.
+- monitor: Computer monitor, LCD/OLED display screen, bezel.
+- television: Flat screen TV, CRT, smart TV.
+- keyboard: Computer keyboard, mechanical or membrane keys, keycaps.
+- mouse: Computer mouse, optical mouse, trackball.
+- printer: Inkjet printer, laser printer, scanner.
+- router: Wi-Fi router, modem, networking device with antennas or ethernet ports.
+- charger_adapter: AC power adapter brick, charging wall plug, power supply adapter.
+- power_bank: Portable battery pack, external USB charger cell.
+- headphones_earbuds: Over-ear headphones, wireless earbuds, charging case.
+- speaker: Audio speaker, bluetooth speaker, soundbar, speaker cone.
+- camera: Digital camera, DSLR lens, action cam, camcorder.
+- battery: Lithium-ion battery pack, pouch cell, AA/AAA battery cell, rechargeable module.
+- circuit_board: Printed circuit board (PCB), motherboard, green/blue solder mask, IC chips, capacitors, SMD components, solder joints.
+- cables_wires: USB cable, power cord, charging wire, HDMI cable, copper wiring harness, connectors.
+- appliance_small: Microwave, toaster, kettle, iron, blender, mixer, electric fan.
+- appliance_large: Washing machine, refrigerator, air conditioner, dishwasher.
+- other_electronic: Any other electronic device, remote control, drone, sensor, smart home gadget, electronic component.
+- not_electronic: ONLY if the photo strictly contains a person, selfie, face, clothing, animal, plant, food, or non-electronic object with NO electronic device or component present.
+
+Rules for Damaged & Disassembled Devices:
+1. Treat cracked screens, swollen batteries, frayed cables, burnt chips, dusty fans, opened casings, or partially disassembled parts as valid electronic devices/components.
+2. If an electronic item is visible, assign a high confidence score (0.80 - 0.98).
+3. If unsure between two electronic categories, select the closest category and set confidence to 0.60 - 0.75.
+4. Extract specific visible damages (e.g. "Screen Digitizer Crack", "Lithium Battery Swelling", "USB Port Corrosion", "Frayed Cable Insulation").
+5. Consider the user's optional fault description to guide internal fault inference.`;
 
 /**
  * Call Google Gemini Vision REST API server-side with structured JSON schema
