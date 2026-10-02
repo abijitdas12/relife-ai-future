@@ -75,6 +75,7 @@ export const RDE_THRESHOLDS = {
 // INTERFACES & PIPELINE TYPES
 // ============================================================================
 export interface GeminiVisionOutput {
+  is_electronic_device?: boolean;
   product_name: string;
   likely_model: string;
   visible_condition: string;

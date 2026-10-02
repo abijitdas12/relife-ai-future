@@ -4,6 +4,7 @@ import { evaluateRuleEngine, RuleEngineResult } from "./rule-engine";
 import {
   evaluateRDE,
   GeminiVisionOutput,
+  GeminiConfidence,
   RdeEvaluationResult,
   R5Category,
 } from "./rde";
@@ -86,18 +87,31 @@ const PipelineInputSchema = z.object({
 // ============================================================================
 const GEMINI_SYSTEM_PROMPT = `You are ReLife AI ML Vision Classifier, an expert electronic device & circular e-waste inspection engine.
 
-CRITICAL INSTRUCTIONS:
-1. Examine the image carefully for ANY electronic device, laptop, smartphone, circuit board, battery, charger, display, or component.
-2. Consider the user's provided fault description if available.
-3. You MUST return ONLY valid minified JSON with the following exact keys:
-{
-  "product_name": string (e.g. "Laptop", "Smartphone", "Lithium Battery", "Charger Cable", "Circuit Board"),
-  "likely_model": string (e.g. "Dell XPS 15", "iPhone 12 Series", "Universal Type-C Charger", "Unknown Model"),
-  "visible_condition": string (e.g. "Battery Swollen & Gas Buildup", "Screen Glass Fractured", "Port Moisture Corrosion", "Insulation Wire Frayed", "Thermal Dust Obstruction"),
-  "possible_faults": [string array of detected or inferred physical/electrical faults],
-  "confidence": "high" | "medium" | "low",
-  "requires_human_inspection": boolean
-}
+CRITICAL REQUIREMENT - OBJECT & PERSON DETECTION:
+1. Examine the image carefully. FIRST check if an electronic device, gadget, appliance, printed circuit board, battery, charger, display, port, or e-waste component is present in the photo.
+2. IF THE PHOTO CONTAINS A HUMAN FACE, PERSON, SELFIE, CLOTHING, ANIMAL, PLANT, WALL, FOOD, OR NON-ELECTRONIC OBJECT ONLY (and NO electronic device/component is present):
+   You MUST return:
+   {
+     "is_electronic_device": false,
+     "product_name": "Non-Electronic Subject (Person / Face Detected)",
+     "likely_model": "Non-Electronic Object",
+     "visible_condition": "No electronic device recognized in photo. Photo contains a person or non-electronic subject.",
+     "possible_faults": ["Scan Rejected: No Electronic Device Present"],
+     "confidence": "low",
+     "requires_human_inspection": true
+   }
+
+3. IF AN ELECTRONIC DEVICE OR COMPONENT IS VISIBLE IN THE PHOTO:
+   Set "is_electronic_device": true and return structured JSON with exact keys:
+   {
+     "is_electronic_device": true,
+     "product_name": string (e.g. "Laptop", "Smartphone", "Lithium Battery", "Charger Cable", "Circuit Board", "Television"),
+     "likely_model": string (e.g. "Dell XPS 15", "iPhone 12", "Type-C Adapter", "Generic Electronics"),
+     "visible_condition": string (e.g. "Battery Swollen & Gas Buildup", "Screen Glass Fractured", "Port Moisture Corrosion", "Insulation Wire Frayed", "Thermal Dust Obstruction"),
+     "possible_faults": [string array of detected or inferred physical/electrical faults],
+     "confidence": "high" | "medium" | "low",
+     "requires_human_inspection": boolean
+   }
 
 RULE FOR "requires_human_inspection":
 Be conservative: default "requires_human_inspection" to true whenever the fault could involve internal circuitry, swollen lithium batteries, electrical short hazards, liquid ingress, or cannot be 100% confirmed by a photo alone.`;
@@ -158,6 +172,7 @@ Examine photo carefully, perform electronic product & component fault detection,
         if (match) {
           const parsed = JSON.parse(match[0]);
           return {
+            is_electronic_device: parsed.is_electronic_device !== false,
             product_name: parsed.product_name || "Electronic Device",
             likely_model: parsed.likely_model || "Generic Model",
             visible_condition: parsed.visible_condition || "Visible Damage Detected",
@@ -183,6 +198,7 @@ function analyzeLocallyFallback(userFaultDesc: string): GeminiVisionOutput {
 
   if (descLower.includes("battery") || descLower.includes("swollen") || descLower.includes("charge")) {
     return {
+      is_electronic_device: true,
       product_name: "Lithium Battery",
       likely_model: "Laptop / Phone Battery Cell",
       visible_condition: "Swollen & Deformed Cell Housing",
@@ -194,6 +210,7 @@ function analyzeLocallyFallback(userFaultDesc: string): GeminiVisionOutput {
 
   if (descLower.includes("screen") || descLower.includes("display") || descLower.includes("glass")) {
     return {
+      is_electronic_device: true,
       product_name: "Display Panel",
       likely_model: "OLED / LCD Glass Digitizer",
       visible_condition: "Cracked Front Glass Matrix",
@@ -203,12 +220,14 @@ function analyzeLocallyFallback(userFaultDesc: string): GeminiVisionOutput {
     };
   }
 
+  // Strict Rejection for selfie / person / non-electronic inputs
   return {
-    product_name: "Electronic Device",
-    likely_model: "ReLife Inspected Unit",
-    visible_condition: "Surface Wear & Operational Fault",
-    possible_faults: ["Internal Component Wear", "Connector Degradation"],
-    confidence: "medium",
+    is_electronic_device: false,
+    product_name: "Non-Electronic Subject (Person / Face Detected)",
+    likely_model: "Non-Electronic Object",
+    visible_condition: "No electronic device recognized in photo. Photo contains a person or non-electronic subject.",
+    possible_faults: ["Scan Rejected: No Electronic Device Present"],
+    confidence: "low",
     requires_human_inspection: true,
   };
 }
@@ -300,6 +319,45 @@ export const runReLifePipeline = createServerFn({ method: "POST" })
       }
     } else {
       geminiResult = analyzeLocallyFallback(data.user_fault_description || "");
+    }
+
+    // CHECK FOR NON-ELECTRONIC OBJECT / HUMAN FACE REJECTION
+    if (
+      geminiResult.is_electronic_device === false ||
+      geminiResult.product_name.includes("Non-Electronic") ||
+      geminiResult.product_name.includes("Person") ||
+      geminiResult.product_name.includes("Face")
+    ) {
+      const nonElectronicVal: ImageValidationResult = {
+        isValid: false,
+        quality_score: 20,
+        reason: "⚠️ No electronic device detected in this photo. A person / face / non-electronic object was detected. Please capture or upload a clear photo of an electronic device (e.g. laptop, smartphone, charger, battery, circuit board).",
+        is_blurry: false,
+      };
+
+      const fallbackRde = evaluateRDE(geminiResult, {
+        estimated_repair_cost: 0,
+        estimated_replace_cost: 1000,
+        component_condition_ratings: { "Object": 10 },
+        remaining_life_estimate_years: 0,
+        component_salvage_value_ratio: 0,
+        component_availability_ratio: 0,
+      });
+
+      return {
+        scan_id: scanId,
+        image_validation: nonElectronicVal,
+        gemini_output: geminiResult,
+        rde_output: fallbackRde,
+        recommendation: {
+          r5_category: "Recycle",
+          repairability_score: 0,
+          reasoning: [nonElectronicVal.reason!],
+          requires_human_inspection: true,
+          headline: "Scan rejected: No electronic device present in photo.",
+        },
+        persisted_to_db: false,
+      };
     }
 
     // STEP 3 & 4: ReLife Decision Engine (RDE) & R5 Evaluation Layer
