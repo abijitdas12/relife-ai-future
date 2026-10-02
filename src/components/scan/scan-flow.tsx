@@ -16,7 +16,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Eyebrow, Section } from "@/components/sections/primitives";
 import { runRde, type RdeResult } from "@/lib/rde";
-import { analyzeProductImage, type VisionAnalysis } from "@/lib/vision.functions";
+import { analyzeProductImage, runReLifePipeline, type VisionAnalysis } from "@/lib/vision.functions";
 import { cn } from "@/lib/utils";
 
 const STAGES = [
@@ -122,37 +122,93 @@ export function ScanFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopCamera]);
 
+  const [userFaultDescription, setUserFaultDescription] = useState<string>("");
+  const [pipelineResult, setPipelineResult] = useState<any>(null);
+
   const analyze = useCallback(
     async (image: string) => {
       setResult(null);
       setAnalysis(null);
+      setPipelineResult(null);
       setError(null);
       setBusy(true);
       setStage(0);
 
       timers.current.forEach(clearTimeout);
-      timers.current = [1, 2, 3].map((i) => setTimeout(() => setStage(i), 900 * i));
+      timers.current = [1, 2, 3].map((i) => setTimeout(() => setStage(i), 800 * i));
 
       try {
-        const vision = await analyzeProductImage({
-          data: { image, apiKey: customApiKey.trim() || undefined },
+        const pipelineResponse = await runReLifePipeline({
+          data: {
+            image,
+            user_fault_description: userFaultDescription.trim(),
+            apiKey: customApiKey.trim() || undefined,
+          },
         });
+
         timers.current.forEach(clearTimeout);
-        setAnalysis(vision);
+        setPipelineResult(pipelineResponse);
+
+        if (!pipelineResponse.image_validation.isValid) {
+          setError(pipelineResponse.image_validation.reason || "Image quality validation failed.");
+          setStage(-1);
+          setBusy(false);
+          return;
+        }
+
+        const visionLegacy: VisionAnalysis = {
+          product: pipelineResponse.gemini_output.product_name,
+          brandGuess: pipelineResponse.gemini_output.likely_model,
+          category: "Electronics",
+          condition: pipelineResponse.gemini_output.visible_condition,
+          faults: pipelineResponse.gemini_output.possible_faults,
+          detectedComponents: [
+            {
+              name: pipelineResponse.gemini_output.product_name,
+              state: pipelineResponse.gemini_output.visible_condition,
+            },
+          ],
+          repairability: pipelineResponse.recommendation.repairability_score,
+          ageYearsEstimate: 3,
+          repairCostInr: pipelineResponse.rde_output.cost_ratio > 0 ? Math.round(pipelineResponse.rde_output.cost_ratio * 25000) : 1400,
+          replacementCostInr: 25000,
+          componentAvailability: 0.85,
+          remainingLifeYears: 2.5,
+          componentValue: 0.55,
+          notes: pipelineResponse.recommendation.headline,
+          ruleResult: {
+            lowConfidence: pipelineResponse.gemini_output.confidence === "low",
+            prediction: {
+              device: { name: pipelineResponse.gemini_output.product_name, confidence: 0.9 },
+              component: { name: "Primary Component", confidence: 0.85 },
+              condition: { name: pipelineResponse.gemini_output.visible_condition, confidence: 0.85 },
+            },
+            fault: pipelineResponse.gemini_output.possible_faults[0] || "Physical Condition Issue",
+            severity: pipelineResponse.recommendation.requires_human_inspection ? "High" : "Medium",
+            five_r: (pipelineResponse.recommendation.r5_category.toUpperCase() as any) === "REDUCE" ? "REPAIR" : (pipelineResponse.recommendation.r5_category.toUpperCase() as any),
+            recommendation: pipelineResponse.recommendation.headline,
+            safety_warning: pipelineResponse.recommendation.requires_human_inspection
+              ? "⚠️ Requires bench testing at a Skill Center before powering on."
+              : "Standard safety precautions apply.",
+            disclaimer: "AI photo analysis detects physical conditions. Seek bench testing for hidden electrical faults.",
+          },
+        };
+
+        setAnalysis(visionLegacy);
         setStage(4);
-        const rde = runRde({
-          repairCost: vision.repairCostInr,
-          replacementCost: vision.replacementCostInr,
-          ageYears: vision.ageYearsEstimate,
-          repairability: vision.repairability,
-          componentAvailability: vision.componentAvailability,
-          remainingLife: vision.remainingLifeYears,
-          componentValue: vision.componentValue,
-        });
+
+        const rdeLegacy: RdeResult = {
+          score: pipelineResponse.recommendation.repairability_score,
+          action: (pipelineResponse.recommendation.r5_category.toUpperCase() === "REDUCE" ? "REPAIR" : pipelineResponse.recommendation.r5_category.toUpperCase()) as any,
+          headline: pipelineResponse.recommendation.headline,
+          reasoning: pipelineResponse.recommendation.reasoning,
+          costRatio: pipelineResponse.rde_output.cost_ratio,
+        };
+
         timers.current = [
           setTimeout(() => {
             setStage(5);
-            setResult(rde);
+            setResult(rdeLegacy);
           }, 600),
         ];
       } catch (e) {
@@ -163,7 +219,7 @@ export function ScanFlow() {
         setBusy(false);
       }
     },
-    [customApiKey],
+    [customApiKey, userFaultDescription],
   );
 
   const handleRefine = async (device: string, component: string, condition: string) => {
@@ -295,14 +351,27 @@ export function ScanFlow() {
             onChange={(e) => void onFile(e.target.files?.[0])}
           />
 
-          <div className="relative mt-6 flex flex-wrap gap-3">
+          <div className="relative mt-5 space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
+              Optional Fault Description & Symptoms
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Battery swelling, screen digitizer cracked, charging port loose..."
+              value={userFaultDescription}
+              onChange={(e) => setUserFaultDescription(e.target.value)}
+              className="w-full rounded-xl border border-input bg-background/80 px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald"
+            />
+          </div>
+
+          <div className="relative mt-4 flex flex-wrap gap-3">
             <Button
               variant="hero"
               size="lg"
               disabled={busy}
               onClick={() => inputRef.current?.click()}
             >
-              <Upload className="h-4 w-4" /> Upload Image
+              <Upload className="h-4 w-4" /> Upload Image & Analyze
             </Button>
             <Button
               variant="glass"
@@ -607,7 +676,7 @@ function ResultCard({
               Detected Component Plan
             </p>
             <ul className="mt-4 grid gap-2">
-              {analysis.detectedComponents.map((c) => (
+              {analysis.detectedComponents.map((c: { name: string; state: string }) => (
                 <li
                   key={c.name}
                   className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-sm"

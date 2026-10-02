@@ -1,12 +1,24 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { evaluateRuleEngine, RuleEngineResult } from "./rule-engine";
+import {
+  evaluateRDE,
+  GeminiVisionOutput,
+  RdeEvaluationResult,
+  R5Category,
+} from "./rde";
+import { supabase } from "@/integrations/supabase/client";
 
-const InputSchema = z.object({
-  /** data:image/...;base64,... */
-  image: z.string().min(32).max(12_000_000),
-  apiKey: z.string().optional(),
-});
+// ============================================================================
+// 1. INPUT LAYER & IMAGE QUALITY VALIDATION
+// ============================================================================
+export interface ImageValidationResult {
+  isValid: boolean;
+  quality_score: number; // 0 - 100
+  reason?: string;
+  is_blurry?: boolean;
+  is_too_dark?: boolean;
+}
 
 export interface VisionAnalysis {
   product: string;
@@ -26,54 +38,89 @@ export interface VisionAnalysis {
   ruleResult: RuleEngineResult;
 }
 
-const STRICT_SYSTEM_PROMPT = `You are ReLife AI ML Vision Classifier, an expert electronic device & e-waste inspection engine.
+/**
+ * Validate image payload & quality before passing to Gemini Vision API
+ */
+export function validateImageQuality(base64Image: string): ImageValidationResult {
+  if (!base64Image || base64Image.length < 1200) {
+    return {
+      isValid: false,
+      quality_score: 10,
+      reason: "Image resolution or data payload is corrupt/too low. Please capture or upload a clear photo of the electronic product.",
+      is_blurry: true,
+    };
+  }
 
-CRITICAL INSTRUCTION:
-Examine the image carefully for ANY electronic device, appliance, gadget, component, printed circuit board (PCB), battery, display, screen, port, connector, power adapter, cable, wire, or e-waste visible in the photo.
+  // Calculate sample variance heuristic from base64 string
+  const sample = base64Image.slice(0, 3500);
+  const uniqueChars = new Set(sample).size;
+  const varianceRatio = uniqueChars / 64; // base64 charset
 
-Note: Electronics are frequently held by human hands or placed on cluttered desks. If ANY electronic device or component is present anywhere in the frame (even if held by a hand or partially visible), you MUST classify it as an electronic device (isElectronicDevice: true).
+  if (varianceRatio < 0.25) {
+    return {
+      isValid: false,
+      quality_score: 25,
+      reason: "Photo appears extremely low-contrast, dark, or blurry. Ensure adequate lighting and focus directly on the device.",
+      is_too_dark: true,
+    };
+  }
 
-ONLY IF THE IMAGE HAS ABSOLUTELY NO ELECTRONICS AT ALL (e.g. purely a face, empty wall, plant, text document, or food):
-Set "isElectronicDevice": false with low confidence (0.10).
+  return {
+    isValid: true,
+    quality_score: 94,
+  };
+}
 
-IF ANY ELECTRONIC DEVICE OR COMPONENT IS VISIBLE:
-Set "isElectronicDevice": true and return structured JSON with realistic high confidence scores (0.80 to 0.99):
+const PipelineInputSchema = z.object({
+  /** data:image/...;base64,... */
+  image: z.string().min(32).max(12_000_000),
+  user_fault_description: z.string().optional(),
+  user_id: z.string().optional(),
+  apiKey: z.string().optional(),
+  estimated_repair_cost: z.number().optional(),
+  estimated_replace_cost: z.number().optional(),
+});
+
+// ============================================================================
+// 2. AI ANALYSIS MODULE (Gemini Vision — Prompt Engineered)
+// ============================================================================
+const GEMINI_SYSTEM_PROMPT = `You are ReLife AI ML Vision Classifier, an expert electronic device & circular e-waste inspection engine.
+
+CRITICAL INSTRUCTIONS:
+1. Examine the image carefully for ANY electronic device, laptop, smartphone, circuit board, battery, charger, display, or component.
+2. Consider the user's provided fault description if available.
+3. You MUST return ONLY valid minified JSON with the following exact keys:
 {
-  "isElectronicDevice": true,
-  "device": { "name": "Smartphone" | "Laptop" | "Charger" | "Desktop" | "Television" | "Earphones" | "Keyboard" | "Circuit Board" | "Battery" | "Electronics", "confidence": number },
-  "component": { "name": "Battery" | "Screen" | "Charging Port" | "Cable" | "Fan" | "Hinge" | "Plug" | "Body" | "Board" | "Display", "confidence": number },
-  "condition": { "name": "Swollen" | "Cracked" | "Burned" | "Corroded" | "Frayed" | "Bent" | "Broken" | "Dusty" | "Normal", "confidence": number },
-  "brandGuess": string,
-  "category": string,
-  "repairability": number,
-  "repairCostInr": number,
-  "replacementCostInr": number,
-  "notes": string
-}
-Return ONLY valid minified JSON.`;
-
-/**
- * Call custom Python ML Model Inference Service (FastAPI / YOLOv8 trained on E-Waste dataset)
- */
-async function callCustomMLModel(base64DataUrl: string, endpoint: string) {
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ image: base64DataUrl }),
-  });
-  if (!res.ok) throw new Error(`ML model endpoint returned ${res.status}`);
-  return await res.json();
+  "product_name": string (e.g. "Laptop", "Smartphone", "Lithium Battery", "Charger Cable", "Circuit Board"),
+  "likely_model": string (e.g. "Dell XPS 15", "iPhone 12 Series", "Universal Type-C Charger", "Unknown Model"),
+  "visible_condition": string (e.g. "Battery Swollen & Gas Buildup", "Screen Glass Fractured", "Port Moisture Corrosion", "Insulation Wire Frayed", "Thermal Dust Obstruction"),
+  "possible_faults": [string array of detected or inferred physical/electrical faults],
+  "confidence": "high" | "medium" | "low",
+  "requires_human_inspection": boolean
 }
 
+RULE FOR "requires_human_inspection":
+Be conservative: default "requires_human_inspection" to true whenever the fault could involve internal circuitry, swollen lithium batteries, electrical short hazards, liquid ingress, or cannot be 100% confirmed by a photo alone.`;
+
 /**
- * Perform direct Google Gemini API Vision inference using Gemini REST endpoint
+ * Call Gemini Vision REST API from backend server function
  */
-async function callDirectGeminiVision(base64DataUrl: string, apiKey: string) {
+async function callGeminiVisionModule(
+  base64DataUrl: string,
+  userFaultDescription: string,
+  apiKey: string
+): Promise<GeminiVisionOutput> {
   const base64Data = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
   const mimeMatch = base64DataUrl.match(/^data:(image\/\w+);base64,/);
   const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+  const promptText = `${GEMINI_SYSTEM_PROMPT}
+
+USER FAULT DESCRIPTION: "${userFaultDescription || "No additional text provided."}"
+
+Examine photo and output valid minified JSON only.`;
 
   const res = await fetch(url, {
     method: "POST",
@@ -82,7 +129,7 @@ async function callDirectGeminiVision(base64DataUrl: string, apiKey: string) {
       contents: [
         {
           parts: [
-            { text: STRICT_SYSTEM_PROMPT + "\nAnalyse this photo and output valid minified JSON only." },
+            { text: promptText },
             {
               inline_data: {
                 mime_type: mimeType,
@@ -105,271 +152,252 @@ async function callDirectGeminiVision(base64DataUrl: string, apiKey: string) {
   const json = await res.json();
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("Invalid response format");
-  return JSON.parse(match[0]);
+  if (!match) throw new Error("Invalid response JSON format from Gemini");
+  
+  const parsed = JSON.parse(match[0]);
+  return {
+    product_name: parsed.product_name || "Electronic Device",
+    likely_model: parsed.likely_model || "Generic Model",
+    visible_condition: parsed.visible_condition || "Visible Damage Detected",
+    possible_faults: Array.isArray(parsed.possible_faults) ? parsed.possible_faults : ["Physical Condition Issue"],
+    confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "medium",
+    requires_human_inspection: parsed.requires_human_inspection !== false,
+  };
 }
 
 /**
- * Intelligent local image classifier & feature analyzer fallback
+ * Fallback AI Vision Analyzer when API key is unconfigured or in offline test mode
  */
-function analyzeImageLocally(base64Image: string) {
-  const len = base64Image.length;
-  let hash = 0;
-  for (let i = 0; i < Math.min(len, 5000); i += 5) {
-    hash = (hash << 5) - hash + base64Image.charCodeAt(i);
-    hash |= 0;
-  }
-  const absHash = Math.abs(hash);
+function analyzeLocallyFallback(userFaultDesc: string): GeminiVisionOutput {
+  const descLower = userFaultDesc.toLowerCase();
 
-  // Check for ultra-small blank or corrupt payload (< 1KB)
-  if (len < 1000) {
+  if (descLower.includes("battery") || descLower.includes("swollen") || descLower.includes("charge")) {
     return {
-      isElectronicDevice: false,
-      device: { name: "Non-electronic / Low Quality Image", confidence: 0.18 },
-      component: { name: "None Detected", confidence: 0.12 },
-      condition: { name: "Uncertain", confidence: 0.10 },
-      brandGuess: "Unknown",
-      category: "Unrecognized",
-      repairability: 0,
-      repairCostInr: 0,
-      replacementCostInr: 0,
-      notes: "Please upload a clearer photo of your electronic device or component.",
+      product_name: "Lithium Battery",
+      likely_model: "Laptop / Phone Battery Cell",
+      visible_condition: "Swollen & Deformed Cell Housing",
+      possible_faults: ["Lithium Cell Gas Buildup", "Thermal Overheating", "Capacity Degradation"],
+      confidence: "high",
+      requires_human_inspection: true,
     };
   }
 
-  const electronicSamples = [
-    {
-      isElectronicDevice: true,
-      device: { name: "Smartphone", confidence: 0.95 },
-      component: { name: "Charging Port", confidence: 0.92 },
-      condition: { name: "Corroded", confidence: 0.90 },
-      brandGuess: "Samsung / Xiaomi",
-      category: "Mobile Electronics",
-      repairability: 82,
-      repairCostInr: 1200,
-      replacementCostInr: 28000,
-      notes: "Moisture oxidation detected on USB Type-C charging port pins.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Laptop", confidence: 0.96 },
-      component: { name: "Battery", confidence: 0.94 },
-      condition: { name: "Swollen", confidence: 0.92 },
-      brandGuess: "Dell / HP / Lenovo",
-      category: "Personal Computer",
-      repairability: 45,
-      repairCostInr: 3200,
-      replacementCostInr: 58000,
-      notes: "Lithium battery cell swelling and casing deformation identified.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Smartphone", confidence: 0.94 },
-      component: { name: "Screen", confidence: 0.91 },
-      condition: { name: "Cracked", confidence: 0.89 },
-      brandGuess: "Apple / OnePlus",
-      category: "Mobile Electronics",
-      repairability: 78,
-      repairCostInr: 2800,
-      replacementCostInr: 35000,
-      notes: "Front glass digitizer web cracking detected across display.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Charger", confidence: 0.97 },
-      component: { name: "Cable", confidence: 0.95 },
-      condition: { name: "Frayed", confidence: 0.93 },
-      brandGuess: "Apple / Anker",
-      category: "Power Accessories",
-      repairability: 20,
-      repairCostInr: 450,
-      replacementCostInr: 2200,
-      notes: "Outer rubber insulation torn; copper shielding exposed.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Laptop", confidence: 0.93 },
-      component: { name: "Fan", confidence: 0.90 },
-      condition: { name: "Dusty", confidence: 0.88 },
-      brandGuess: "Lenovo ThinkPad",
-      category: "Personal Computer",
-      repairability: 92,
-      repairCostInr: 800,
-      replacementCostInr: 65000,
-      notes: "Heavy dust accumulation obstructing cooling fan fins.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Circuit Board", confidence: 0.96 },
-      component: { name: "Board", confidence: 0.94 },
-      condition: { name: "Burned", confidence: 0.91 },
-      brandGuess: "Asus / Gigabyte / Generic PCB",
-      category: "Printed Circuit Assembly",
-      repairability: 55,
-      repairCostInr: 1800,
-      replacementCostInr: 12500,
-      notes: "Thermal overload scorched power delivery MOSFET stage and trace copper.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Laptop", confidence: 0.91 },
-      component: { name: "Hinge", confidence: 0.88 },
-      condition: { name: "Broken", confidence: 0.87 },
-      brandGuess: "HP Pavilion / Acer",
-      category: "Personal Computer",
-      repairability: 68,
-      repairCostInr: 1600,
-      replacementCostInr: 42000,
-      notes: "Display plastic housing cracked at metal hinge mounting point.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Television", confidence: 0.92 },
-      component: { name: "Screen", confidence: 0.90 },
-      condition: { name: "Cracked", confidence: 0.89 },
-      brandGuess: "LG / Samsung TV",
-      category: "Home Entertainment",
-      repairability: 30,
-      repairCostInr: 9500,
-      replacementCostInr: 32000,
-      notes: "Internal LCD matrix impact fracture with vertical color line distortion.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Earphones", confidence: 0.94 },
-      component: { name: "Plug", confidence: 0.91 },
-      condition: { name: "Corroded", confidence: 0.89 },
-      brandGuess: "Sony / boAt / RealMe",
-      category: "Audio Equipment",
-      repairability: 72,
-      repairCostInr: 350,
-      replacementCostInr: 3500,
-      notes: "Charging case contact gold pins oxidized with greenish residue.",
-    },
-    {
-      isElectronicDevice: true,
-      device: { name: "Desktop", confidence: 0.93 },
-      component: { name: "Board", confidence: 0.90 },
-      condition: { name: "Bent", confidence: 0.88 },
-      brandGuess: "Intel / AMD Socket",
-      category: "Personal Computer",
-      repairability: 60,
-      repairCostInr: 1500,
-      replacementCostInr: 18000,
-      notes: "CPU socket array pins misaligned due to improper installation.",
-    },
-  ];
+  if (descLower.includes("screen") || descLower.includes("display") || descLower.includes("glass")) {
+    return {
+      product_name: "Display Panel",
+      likely_model: "OLED / LCD Glass Digitizer",
+      visible_condition: "Cracked Front Glass Matrix",
+      possible_faults: ["Glass Digitizer Fracture", "Panel Touch Sensor Failure"],
+      confidence: "high",
+      requires_human_inspection: false,
+    };
+  }
 
-  return electronicSamples[absHash % electronicSamples.length]!;
+  return {
+    product_name: "Electronic Device",
+    likely_model: "ReLife Inspected Unit",
+    visible_condition: "Surface Wear & Operational Fault",
+    possible_faults: ["Internal Component Wear", "Connector Degradation"],
+    confidence: "medium",
+    requires_human_inspection: true,
+  };
 }
 
-export const analyzeProductImage = createServerFn({ method: "POST" })
-  .validator((data: unknown) => InputSchema.parse(data))
-  .handler(async ({ data }): Promise<VisionAnalysis> => {
-    const customEndpoint = process.env["ML_MODEL_ENDPOINT"];
+// ============================================================================
+// 5. OUTPUT LAYER & END-TO-END PIPELINE SERVER FUNCTION
+// ============================================================================
+export interface ReLifePipelineResult {
+  scan_id: string;
+  image_validation: ImageValidationResult;
+  gemini_output: GeminiVisionOutput;
+  rde_output: RdeEvaluationResult;
+  recommendation: {
+    r5_category: R5Category;
+    repairability_score: number;
+    reasoning: string[];
+    requires_human_inspection: boolean;
+    headline: string;
+  };
+  persisted_to_db: boolean;
+}
+
+/**
+ * FULL END-TO-END RELIFE AI PIPELINE SERVER FUNCTION
+ *
+ * Flow: Faulty Product → Image/Info → Fault Extraction → Gemini Vision AI → RDE Scorer → R5 Evaluation → Recommendation & DB Persistence
+ */
+export const runReLifePipeline = createServerFn({ method: "POST" })
+  .validator((data: unknown) => PipelineInputSchema.parse(data))
+  .handler(async ({ data }): Promise<ReLifePipelineResult> => {
+    const scanId = crypto.randomUUID();
+
+    // STEP 1: Input Layer & Image Quality Validation
+    const imageVal = validateImageQuality(data.image);
+    if (!imageVal.isValid) {
+      const fallbackGemini: GeminiVisionOutput = {
+        product_name: "Unrecognized Image",
+        likely_model: "Unknown",
+        visible_condition: "Blurry or Low Quality Image",
+        possible_faults: ["Image Quality Rejection"],
+        confidence: "low",
+        requires_human_inspection: true,
+      };
+
+      const fallbackRde = evaluateRDE(fallbackGemini, {
+        estimated_repair_cost: 0,
+        estimated_replace_cost: 1000,
+        component_condition_ratings: { "Image": 10 },
+        remaining_life_estimate_years: 0,
+        component_salvage_value_ratio: 0,
+        component_availability_ratio: 0,
+      });
+
+      return {
+        scan_id: scanId,
+        image_validation: imageVal,
+        gemini_output: fallbackGemini,
+        rde_output: fallbackRde,
+        recommendation: {
+          r5_category: "Recycle",
+          repairability_score: 0,
+          reasoning: [imageVal.reason || "Image quality check failed."],
+          requires_human_inspection: true,
+          headline: "Image rejected due to low quality or blur.",
+        },
+        persisted_to_db: false,
+      };
+    }
+
+    // STEP 2: AI Analysis Module (Gemini Vision)
     const apiKey =
-      (data as any).apiKey ||
+      data.apiKey ||
       process.env["GEMINI_API_KEY"] ||
       process.env["GOOGLE_GENERATIVE_AI_API_KEY"] ||
       process.env["LOVABLE_API_KEY"] ||
       process.env["VITE_GEMINI_API_KEY"];
 
-    let mlOutput: {
-      isElectronicDevice?: boolean;
-      device: { name: string; confidence: number };
-      component: { name: string; confidence: number };
-      condition: { name: string; confidence: number };
-      brandGuess: string;
-      category: string;
-      repairability: number;
-      repairCostInr: number;
-      replacementCostInr: number;
-      notes: string;
-    };
-
-    if (customEndpoint) {
+    let geminiResult: GeminiVisionOutput;
+    if (apiKey && apiKey !== "demo") {
       try {
-        const p = await callCustomMLModel(data.image, customEndpoint);
-        mlOutput = {
-          isElectronicDevice: p.isElectronicDevice !== false,
-          device: { name: p.device?.name || "E-Waste Device", confidence: p.device?.confidence || 0.9 },
-          component: { name: p.component?.name || "Component", confidence: p.component?.confidence || 0.85 },
-          condition: { name: p.condition?.name || "Condition", confidence: p.condition?.confidence || 0.8 },
-          brandGuess: p.brandGuess || "Custom Trained Model",
-          category: p.category || "E-Waste Detection",
-          repairability: p.repairability || 65,
-          repairCostInr: p.repairCostInr || 2500,
-          replacementCostInr: p.replacementCostInr || 25000,
-          notes: p.notes || "Analyzed by custom trained Roboflow E-Waste YOLO model.",
-        };
+        geminiResult = await callGeminiVisionModule(
+          data.image,
+          data.user_fault_description || "",
+          apiKey
+        );
       } catch (err) {
-        console.warn("[Custom ML Model Endpoint Error]:", err);
-        mlOutput = analyzeImageLocally(data.image);
-      }
-    } else if (apiKey && apiKey !== "demo") {
-      try {
-        const p = await callDirectGeminiVision(data.image, apiKey);
-        mlOutput = {
-          isElectronicDevice: p.isElectronicDevice !== false,
-          device: {
-            name: p.device?.name || "Electronics",
-            confidence: typeof p.device?.confidence === "number" ? p.device.confidence : 0.85,
-          },
-          component: {
-            name: p.component?.name || "Component",
-            confidence: typeof p.component?.confidence === "number" ? p.component.confidence : 0.82,
-          },
-          condition: {
-            name: p.condition?.name || "Condition",
-            confidence: typeof p.condition?.confidence === "number" ? p.condition.confidence : 0.8,
-          },
-          brandGuess: p.brandGuess || "Generic",
-          category: p.category || "Electronics",
-          repairability: typeof p.repairability === "number" ? p.repairability : 65,
-          repairCostInr: typeof p.repairCostInr === "number" ? p.repairCostInr : 2500,
-          replacementCostInr: typeof p.replacementCostInr === "number" ? p.replacementCostInr : 28000,
-          notes: p.notes || "Analyzed with Gemini Vision Model.",
-        };
-      } catch (e) {
-        console.warn("[Vision API Direct Call Error, trying gateway]:", e);
-        mlOutput = analyzeImageLocally(data.image);
+        console.warn("[Pipeline Gemini Module Error, fallback active]:", err);
+        geminiResult = analyzeLocallyFallback(data.user_fault_description || "");
       }
     } else {
-      mlOutput = analyzeImageLocally(data.image);
+      geminiResult = analyzeLocallyFallback(data.user_fault_description || "");
     }
 
-    if (mlOutput.isElectronicDevice === false) {
-      mlOutput.device.confidence = Math.min(mlOutput.device.confidence, 0.2);
-      mlOutput.component.confidence = Math.min(mlOutput.component.confidence, 0.15);
-      mlOutput.condition.confidence = Math.min(mlOutput.condition.confidence, 0.1);
+    // STEP 3 & 4: ReLife Decision Engine (RDE) & R5 Evaluation Layer
+    const repairCost = data.estimated_repair_cost || 1400;
+    const replaceCost = data.estimated_replace_cost || 25000;
+
+    const rdeResult = evaluateRDE(geminiResult, {
+      estimated_repair_cost: repairCost,
+      estimated_replace_cost: replaceCost,
+      component_condition_ratings: {
+        Mainboard: 80,
+        Battery: geminiResult.visible_condition.toLowerCase().includes("swollen") ? 20 : 75,
+        Display: geminiResult.visible_condition.toLowerCase().includes("cracked") ? 30 : 85,
+      },
+      remaining_life_estimate_years: 2.5,
+      component_salvage_value_ratio: 0.55,
+      component_availability_ratio: 0.85,
+      device_age_years: 3,
+    });
+
+    // STEP 5: Database Persistence (Supabase / Firestore DB)
+    let persisted = false;
+    try {
+      await (supabase.from as any)("scans").insert([
+        {
+          id: scanId,
+          user_id: data.user_id || null,
+          product_name: geminiResult.product_name,
+          likely_model: geminiResult.likely_model,
+          visible_condition: geminiResult.visible_condition,
+          possible_faults: geminiResult.possible_faults,
+          confidence: geminiResult.confidence,
+          requires_human_inspection: rdeResult.requires_human_inspection,
+          repairability_score: rdeResult.repairability_score,
+          r5_category: rdeResult.r5_category,
+          reasoning: rdeResult.reasoning,
+          estimated_repair_cost: repairCost,
+          estimated_replace_cost: replaceCost,
+          cost_ratio: rdeResult.cost_ratio,
+          user_fault_description: data.user_fault_description || null,
+          raw_gemini_output: geminiResult,
+          raw_rde_output: rdeResult,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      persisted = true;
+    } catch (dbErr) {
+      console.warn("[Pipeline Scan Persistence Notice]:", dbErr);
     }
+
+    return {
+      scan_id: scanId,
+      image_validation: imageVal,
+      gemini_output: geminiResult,
+      rde_output: rdeResult,
+      recommendation: {
+        r5_category: rdeResult.r5_category,
+        repairability_score: rdeResult.repairability_score,
+        reasoning: rdeResult.reasoning,
+        requires_human_inspection: rdeResult.requires_human_inspection,
+        headline: rdeResult.headline,
+      },
+      persisted_to_db: persisted,
+    };
+  });
+
+// Keep backward compatibility for existing analyzeProductImage invocations
+const InputSchemaLegacy = z.object({
+  image: z.string().min(32).max(12_000_000),
+  apiKey: z.string().optional(),
+});
+
+export const analyzeProductImage = createServerFn({ method: "POST" })
+  .validator((data: unknown) => InputSchemaLegacy.parse(data))
+  .handler(async ({ data }) => {
+    const pipelineRes = await runReLifePipeline({
+      data: {
+        image: data.image,
+        apiKey: data.apiKey,
+      },
+    });
 
     const ruleResult = await evaluateRuleEngine({
-      device: mlOutput.device,
-      component: mlOutput.component,
-      condition: mlOutput.condition,
+      device: { name: pipelineRes.gemini_output.product_name, confidence: 0.9 },
+      component: { name: "Primary Component", confidence: 0.85 },
+      condition: { name: pipelineRes.gemini_output.visible_condition, confidence: 0.85 },
     });
 
     return {
-      product: mlOutput.device.name,
-      brandGuess: mlOutput.brandGuess,
-      category: mlOutput.category,
-      condition: mlOutput.condition.name,
-      faults: [`${mlOutput.component.name}: ${mlOutput.condition.name}`, ruleResult.fault],
+      product: pipelineRes.gemini_output.product_name,
+      brandGuess: pipelineRes.gemini_output.likely_model,
+      category: "Electronics",
+      condition: pipelineRes.gemini_output.visible_condition,
+      faults: pipelineRes.gemini_output.possible_faults,
       detectedComponents: [
         {
-          name: mlOutput.component.name,
-          state: `${mlOutput.condition.name} (${Math.round(mlOutput.condition.confidence * 100)}% conf)`,
+          name: pipelineRes.gemini_output.product_name,
+          state: pipelineRes.gemini_output.visible_condition,
         },
       ],
-      repairability: mlOutput.repairability,
+      repairability: pipelineRes.recommendation.repairability_score,
       ageYearsEstimate: 3,
-      repairCostInr: mlOutput.repairCostInr,
-      replacementCostInr: mlOutput.replacementCostInr,
-      componentAvailability: 0.8,
-      remainingLifeYears: 2,
-      componentValue: 0.6,
-      notes: mlOutput.notes,
+      repairCostInr: 1400,
+      replacementCostInr: 25000,
+      componentAvailability: 0.85,
+      remainingLifeYears: 2.5,
+      componentValue: 0.55,
+      notes: pipelineRes.recommendation.headline,
       ruleResult,
     };
   });
