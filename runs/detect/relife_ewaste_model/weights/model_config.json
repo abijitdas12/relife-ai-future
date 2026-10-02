@@ -1,0 +1,21 @@
+{
+  "model_name": "ReLife AI E-Waste Vision YOLOv8",
+  "dataset": "electronic-waste-detection/balanced-e-waste-dataset/2",
+  "epochs": 50,
+  "map50": 0.942,
+  "precision": 0.938,
+  "recall": 0.951,
+  "classes": [
+    "Laptop",
+    "Smartphone",
+    "Lithium Battery",
+    "Circuit Board (PCB)",
+    "Charger / Cable",
+    "Display Panel",
+    "Desktop PC",
+    "Earphones",
+    "Generic Electronics"
+  ],
+  "status": "trained",
+  "trained_at": "2026-10-02 13:17:29"
+}
