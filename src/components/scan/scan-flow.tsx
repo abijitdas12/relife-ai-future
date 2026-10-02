@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Cpu,
   ImageIcon,
+  Key,
   RefreshCw,
   ScanLine,
   Sparkles,
@@ -352,9 +353,18 @@ export function ScanFlow() {
           />
 
           <div className="relative mt-5 space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
-              Optional Fault Description & Symptoms
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
+                Optional Fault Description & Symptoms
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowKeyInput(!showKeyInput)}
+                className="text-[0.7rem] font-semibold text-emerald hover:underline flex items-center gap-1"
+              >
+                <Key className="h-3 w-3" /> {showKeyInput ? "Hide API Key" : "Configure Gemini API Key"}
+              </button>
+            </div>
             <input
               type="text"
               placeholder="e.g. Battery swelling, screen digitizer cracked, charging port loose..."
@@ -363,6 +373,33 @@ export function ScanFlow() {
               className="w-full rounded-xl border border-input bg-background/80 px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald"
             />
           </div>
+
+          {showKeyInput && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              className="relative mt-3 rounded-xl border border-emerald/30 bg-emerald/5 p-3 space-y-2"
+            >
+              <div className="flex items-center justify-between text-xs font-semibold text-emerald">
+                <span>🔑 Custom Gemini Vision API Key (Optional)</span>
+                {customApiKey ? (
+                  <span className="text-[0.65rem] bg-emerald/20 px-2 py-0.5 rounded text-emerald">Key Saved</span>
+                ) : (
+                  <span className="text-[0.65rem] text-muted-foreground">Auto-Fallback Vision Enabled</span>
+                )}
+              </div>
+              <input
+                type="password"
+                placeholder="Paste Gemini API Key (AIzaSy...)"
+                value={customApiKey}
+                onChange={(e) => saveApiKey(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald"
+              />
+              <p className="text-[0.68rem] text-muted-foreground">
+                If left blank, ReLife AI automatically uses system Vision APIs + local ML model inference.
+              </p>
+            </motion.div>
+          )}
 
           <div className="relative mt-4 flex flex-wrap gap-3">
             <Button

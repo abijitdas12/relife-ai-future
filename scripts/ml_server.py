@@ -55,7 +55,7 @@ def health_check():
     }
 
 @app.post("/predict")
-async function predict_ewaste(payload: ImagePayload):
+async def predict_ewaste(payload: ImagePayload):
     try:
         # Decode base64 image
         raw_b64 = payload.image.replace(/^data:image\/\w+;base64,/, "")
@@ -104,7 +104,7 @@ def parse_detection_to_structure(top_class: str, confidence: float, detections: 
     """
     Translates raw YOLO bounding box classes into structured (Device, Component, Condition)
     """
-    cls_lower = top_class.toLowerCase() if hasattr(top_class, "toLowerCase") else str(top_class).lower()
+    cls_lower = str(top_class).lower()
 
     device = "Electronics"
     component = "Board"
