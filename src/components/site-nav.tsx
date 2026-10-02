@@ -24,7 +24,6 @@ const links: NavLink[] = [
   { label: "Careers", to: "/", hash: "careers" },
   { label: "Impact", to: "/", hash: "impact" },
   { label: "Dashboard", to: "/dashboard" },
-  { label: "Admin", to: "/admin" },
 ];
 
 export function SiteNav() {

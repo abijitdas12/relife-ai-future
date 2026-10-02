@@ -38,10 +38,7 @@ function DashboardPage() {
         <section className="mx-auto max-w-7xl px-4 pt-4 sm:px-6">
           <div className="glass glow-ring rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
             <div>
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald">
-                <ShieldCheck className="h-4 w-4" /> Live Backend Connected
-              </div>
-              <h1 className="mt-2 font-display text-2xl sm:text-3xl font-semibold">
+              <h1 className="font-display text-2xl sm:text-3xl font-semibold">
                 {user ? (
                   <>
                     Welcome Back, <span className="text-gradient">{user.email?.split("@")[0]}</span>

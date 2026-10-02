@@ -764,11 +764,8 @@ export function AdminPanel() {
       <div className="glass glow-ring rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <div className="flex items-center gap-3">
-            <Badge variant="outline" className="border-emerald/40 bg-emerald/10 text-emerald gap-1.5 px-3 py-1">
-              <ShieldCheck className="h-4 w-4" /> Live Supabase Engine Connected
-            </Badge>
             <Badge variant="secondary" className="gap-1 text-xs">
-              <Activity className="h-3.5 w-3.5 text-emerald" /> Real-time Control
+              <Activity className="h-3.5 w-3.5 text-emerald" /> Real-time Operations Control
             </Badge>
           </div>
           <h1 className="mt-3 font-display text-3xl font-bold tracking-tight">

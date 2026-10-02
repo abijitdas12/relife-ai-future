@@ -30,7 +30,6 @@ const columns: { title: string; links: { label: string; to: "/" | "/scan" | "/si
       { label: "Book a Pickup", to: "/", hash: "pickup" },
       { label: "Careers", to: "/", hash: "careers" },
       { label: "Sign In", to: "/signin" },
-      { label: "Admin Panel", to: "/admin" },
     ],
   },
 ];
