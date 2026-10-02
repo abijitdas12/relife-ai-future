@@ -1,4 +1,4 @@
-CREATE TABLE public.pickup_requests (
+CREATE TABLE IF NOT EXISTS public.pickup_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   reference text NOT NULL,
   customer_name text NOT NULL,
@@ -23,10 +23,11 @@ CREATE TABLE public.pickup_requests (
 GRANT INSERT ON public.pickup_requests TO anon, authenticated;
 GRANT ALL ON public.pickup_requests TO service_role;
 ALTER TABLE public.pickup_requests ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can submit a pickup request" ON public.pickup_requests;
 CREATE POLICY "Anyone can submit a pickup request"
   ON public.pickup_requests FOR INSERT TO anon, authenticated WITH CHECK (true);
 
-CREATE TABLE public.job_applications (
+CREATE TABLE IF NOT EXISTS public.job_applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   job_title text NOT NULL,
   track text NOT NULL,
@@ -43,5 +44,6 @@ CREATE TABLE public.job_applications (
 GRANT INSERT ON public.job_applications TO anon, authenticated;
 GRANT ALL ON public.job_applications TO service_role;
 ALTER TABLE public.job_applications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can apply for a job" ON public.job_applications;
 CREATE POLICY "Anyone can apply for a job"
   ON public.job_applications FOR INSERT TO anon, authenticated WITH CHECK (true);
