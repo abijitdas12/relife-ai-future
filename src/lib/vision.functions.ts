@@ -103,7 +103,7 @@ RULE FOR "requires_human_inspection":
 Be conservative: default "requires_human_inspection" to true whenever the fault could involve internal circuitry, swollen lithium batteries, electrical short hazards, liquid ingress, or cannot be 100% confirmed by a photo alone.`;
 
 /**
- * Call Gemini Vision REST API from backend server function
+ * Call Google Gemini Vision REST API from backend server function with automatic model fallback
  */
 async function callGeminiVisionModule(
   base64DataUrl: string,
@@ -114,55 +114,65 @@ async function callGeminiVisionModule(
   const mimeMatch = base64DataUrl.match(/^data:(image\/\w+);base64,/);
   const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
   const promptText = `${GEMINI_SYSTEM_PROMPT}
 
 USER FAULT DESCRIPTION: "${userFaultDescription || "No additional text provided."}"
 
-Examine photo and output valid minified JSON only.`;
+Examine photo carefully, perform electronic product & component fault detection, and output valid minified JSON only.`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: promptText },
+  // Try model endpoints in order of preference: gemini-2.0-flash -> gemini-1.5-flash -> gemini-1.5-pro
+  const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+  let lastError: Error | null = null;
+
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [
             {
-              inline_data: {
-                mime_type: mimeType,
-                data: base64Data,
-              },
+              parts: [
+                { text: promptText },
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: base64Data,
+                  },
+                },
+              ],
             },
           ],
-        },
-      ],
-      generationConfig: {
-        response_mime_type: "application/json",
-      },
-    }),
-  });
+          generationConfig: {
+            response_mime_type: "application/json",
+            temperature: 0.2,
+          },
+        }),
+      });
 
-  if (!res.ok) {
-    throw new Error(`Gemini API error ${res.status}`);
+      if (res.ok) {
+        const json = await res.json();
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          return {
+            product_name: parsed.product_name || "Electronic Device",
+            likely_model: parsed.likely_model || "Generic Model",
+            visible_condition: parsed.visible_condition || "Visible Damage Detected",
+            possible_faults: Array.isArray(parsed.possible_faults) ? parsed.possible_faults : ["Physical Condition Issue"],
+            confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "medium",
+            requires_human_inspection: parsed.requires_human_inspection !== false,
+          };
+        }
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
   }
 
-  const json = await res.json();
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("Invalid response JSON format from Gemini");
-  
-  const parsed = JSON.parse(match[0]);
-  return {
-    product_name: parsed.product_name || "Electronic Device",
-    likely_model: parsed.likely_model || "Generic Model",
-    visible_condition: parsed.visible_condition || "Visible Damage Detected",
-    possible_faults: Array.isArray(parsed.possible_faults) ? parsed.possible_faults : ["Physical Condition Issue"],
-    confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "medium",
-    requires_human_inspection: parsed.requires_human_inspection !== false,
-  };
+  throw lastError || new Error("Failed to get valid JSON response from Gemini Vision API");
 }
 
 /**
