@@ -392,9 +392,38 @@ export function AdminPanel() {
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (!pickupErr && pickupData && pickupData.length > 0) {
-        setPickups(pickupData as PickupRequestRecord[]);
+      let localPickups: PickupRequestRecord[] = [];
+      try {
+        const stored = localStorage.getItem("relife_pickup_requests");
+        if (stored) {
+          localPickups = JSON.parse(stored);
+        }
+      } catch (e) {
+        console.warn("Local storage pickup_requests read error", e);
       }
+
+      const remotePickups = !pickupErr && pickupData ? (pickupData as PickupRequestRecord[]) : [];
+      const pickupMap = new Map<string, PickupRequestRecord>();
+
+      // Remote pickups from Supabase
+      remotePickups.forEach((p) => pickupMap.set(p.id || p.reference, p));
+      // Local pickups cache
+      localPickups.forEach((p) => {
+        if (!pickupMap.has(p.id) && !pickupMap.has(p.reference)) {
+          pickupMap.set(p.id || p.reference, p);
+        }
+      });
+      // SEED pickups fallback
+      SEED_PICKUPS.forEach((p) => {
+        if (!pickupMap.has(p.id) && !pickupMap.has(p.reference)) {
+          pickupMap.set(p.id || p.reference, p);
+        }
+      });
+
+      const mergedPickups = Array.from(pickupMap.values()).sort(
+        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      );
+      setPickups(mergedPickups);
 
       // 2. Job Applications
       const { data: jobData, error: jobErr } = await (supabase.from as any)("job_applications")
@@ -422,16 +451,17 @@ export function AdminPanel() {
           appMap.set(app.id, app);
         }
       });
+      // SEED careers fallback
+      SEED_CAREERS.forEach((app) => {
+        if (!appMap.has(app.id)) {
+          appMap.set(app.id, app);
+        }
+      });
 
       const mergedApplications = Array.from(appMap.values()).sort(
         (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
       );
-
-      if (mergedApplications.length > 0) {
-        setApplications(mergedApplications);
-      } else {
-        setApplications(SEED_CAREERS);
-      }
+      setApplications(mergedApplications);
 
       // 3. Fault Rules
       const { data: ruleData, error: ruleErr } = await (supabase.from as any)("fault_rules")
@@ -515,7 +545,15 @@ export function AdminPanel() {
 
   // --- Pickup Requests Actions ---
   const handleUpdatePickupStatus = async (id: string, newStatus: string) => {
-    setPickups((prev) => prev.map((p) => (p.id === id ? { ...p, status: newStatus } : p)));
+    setPickups((prev) => {
+      const updated = prev.map((p) => (p.id === id ? { ...p, status: newStatus } : p));
+      try {
+        localStorage.setItem("relife_pickup_requests", JSON.stringify(updated));
+      } catch (e) {
+        console.warn("LocalStorage pickup update notice", e);
+      }
+      return updated;
+    });
 
     try {
       await (supabase.from as any)("pickup_requests").update({ status: newStatus }).eq("id", id);
@@ -527,7 +565,16 @@ export function AdminPanel() {
   };
 
   const handleDeletePickup = async (id: string) => {
-    setPickups((prev) => prev.filter((p) => p.id !== id));
+    setPickups((prev) => {
+      const updated = prev.filter((p) => p.id !== id);
+      try {
+        localStorage.setItem("relife_pickup_requests", JSON.stringify(updated));
+      } catch (e) {
+        console.warn("LocalStorage pickup delete notice", e);
+      }
+      return updated;
+    });
+
     try {
       await (supabase.from as any)("pickup_requests").delete().eq("id", id);
       toast.success("Pickup request deleted");
@@ -560,7 +607,13 @@ export function AdminPanel() {
       created_at: new Date().toISOString(),
     };
 
-    setPickups((prev) => [newRecord, ...prev]);
+    setPickups((prev) => {
+      const updated = [newRecord, ...prev];
+      try {
+        localStorage.setItem("relife_pickup_requests", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
     setIsAddPickupOpen(false);
 
     try {

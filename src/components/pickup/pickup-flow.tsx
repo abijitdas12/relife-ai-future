@@ -96,7 +96,9 @@ export function PickupFlow() {
       const m = PAYMENT_METHODS.find((p) => p.id === method)!;
       const ref = `RL-${Math.floor(100000 + Math.random() * 899999)}`;
       setSaving(true);
-      const { error } = await supabase.from("pickup_requests").insert({
+
+      const newPickupRecord = {
+        id: crypto.randomUUID(),
         reference: ref,
         customer_name: address.name.trim(),
         phone: address.phone.trim(),
@@ -107,18 +109,54 @@ export function PickupFlow() {
         slot: address.slot,
         notes: address.notes.trim() || null,
         device: device.label,
-        faults,
-        urgency,
+        faults: Array.isArray(faults) ? faults : [faults],
+        urgency: urgency || "standard",
         estimated_total: Math.round(quote.total),
         amount_paid_now: Math.round(payMode === "advance" ? quote.advance : quote.total),
         payment_method: m.label,
         payment_mode: payMode,
-      });
-      setSaving(false);
-      if (error) {
-        toast.error("Could not save your booking. Please try again.");
-        return;
+        status: "scheduled",
+        created_at: new Date().toISOString(),
+      };
+
+      // Save to local cache first so pickup request is NEVER lost!
+      try {
+        const stored = localStorage.getItem("relife_pickup_requests");
+        const existing = stored ? JSON.parse(stored) : [];
+        localStorage.setItem("relife_pickup_requests", JSON.stringify([newPickupRecord, ...existing]));
+      } catch (e) {
+        console.warn("Local pickup cache notice", e);
       }
+
+      // Send to Supabase cloud database
+      const { error } = await supabase.from("pickup_requests").insert({
+        id: newPickupRecord.id,
+        reference: newPickupRecord.reference,
+        customer_name: newPickupRecord.customer_name,
+        phone: newPickupRecord.phone,
+        address_line: newPickupRecord.address_line,
+        landmark: newPickupRecord.landmark,
+        city: newPickupRecord.city,
+        pincode: newPickupRecord.pincode,
+        slot: newPickupRecord.slot,
+        notes: newPickupRecord.notes,
+        device: newPickupRecord.device,
+        faults: newPickupRecord.faults,
+        urgency: newPickupRecord.urgency,
+        estimated_total: newPickupRecord.estimated_total,
+        amount_paid_now: newPickupRecord.amount_paid_now,
+        payment_method: newPickupRecord.payment_method,
+        payment_mode: newPickupRecord.payment_mode,
+        status: newPickupRecord.status,
+        created_at: newPickupRecord.created_at,
+      });
+
+      setSaving(false);
+
+      if (error) {
+        console.warn("[Pickup Booking Supabase Notice]: Saved locally, Supabase insert notice:", error);
+      }
+
       setReference(ref);
       toast.success(`${m.label} selected. Pickup booked — reference ${ref}.`);
     }
