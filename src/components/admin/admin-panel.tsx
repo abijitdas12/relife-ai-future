@@ -1861,24 +1861,280 @@ export function AdminPanel() {
 
       {/* --- RECORD INSPECTION MODAL --- */}
       <Dialog open={!!viewingRecord} onOpenChange={() => setViewingRecord(null)}>
-        <DialogContent className="glass glow-ring max-w-lg">
+        <DialogContent className="glass glow-ring max-w-xl">
           <DialogHeader>
-            <DialogTitle className="font-display text-lg font-bold">Record Inspection</DialogTitle>
-            <DialogDescription className="text-xs uppercase tracking-wider text-emerald">
-              Type: {viewingType}
+            <DialogTitle className="font-display text-xl font-bold flex items-center justify-between">
+              <span>Detailed Record Description</span>
+              {viewingRecord?.reference && (
+                <Badge className="bg-emerald/20 text-emerald font-mono border-0 text-xs">
+                  {viewingRecord.reference}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-xs uppercase tracking-wider text-emerald font-semibold">
+              Category: {viewingType} Record
             </DialogDescription>
           </DialogHeader>
 
           {viewingRecord && (
-            <div className="space-y-3 text-xs bg-background/50 p-4 rounded-xl border border-border/50 max-h-[350px] overflow-y-auto">
-              <pre className="font-mono text-[11px] whitespace-pre-wrap break-words text-foreground">
-                {JSON.stringify(viewingRecord, null, 2)}
-              </pre>
+            <div className="space-y-4 text-xs max-h-[70vh] overflow-y-auto pr-1">
+              {/* PICKUP RECORD DETAILED VIEW */}
+              {viewingType === "pickup" && (
+                <div className="space-y-3">
+                  {/* Status & Reference Header Card */}
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-background/60 border border-border/60">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Pickup Reference</span>
+                      <span className="text-base font-bold font-mono text-emerald">{viewingRecord.reference}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        className={`text-xs uppercase px-2.5 py-1 border-0 ${
+                          viewingRecord.status === "completed"
+                            ? "bg-emerald/20 text-emerald"
+                            : viewingRecord.status === "in_progress"
+                            ? "bg-amber-500/20 text-amber-500"
+                            : viewingRecord.status === "cancelled"
+                            ? "bg-destructive/20 text-destructive"
+                            : "bg-blue-500/20 text-blue-500"
+                        }`}
+                      >
+                        {viewingRecord.status}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs capitalize">
+                        {viewingRecord.urgency || "standard"} Priority
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Customer Information Card */}
+                  <Card className="glass border-border/60">
+                    <CardHeader className="p-3.5 pb-2">
+                      <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <UserCheck className="h-3.5 w-3.5 text-emerald" /> Customer & Contact Info
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-3.5 pt-0 space-y-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Customer Name</span>
+                          <span className="font-semibold text-foreground text-sm">{viewingRecord.customer_name}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Phone Number</span>
+                          <span className="font-mono text-foreground font-semibold">{viewingRecord.phone}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-border/40">
+                        <span className="text-[10px] text-muted-foreground block">Complete Address</span>
+                        <div className="font-medium text-foreground flex items-start gap-1.5 mt-0.5">
+                          <MapPin className="h-3.5 w-3.5 text-emerald shrink-0 mt-0.5" />
+                          <div>
+                            {viewingRecord.address_line}
+                            {viewingRecord.landmark && <span className="text-muted-foreground"> (Landmark: {viewingRecord.landmark})</span>}
+                            <div className="text-[11px] text-muted-foreground font-semibold mt-0.5">
+                              {viewingRecord.city}, Pincode: {viewingRecord.pincode}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Device & Diagnostics Card */}
+                  <Card className="glass border-border/60">
+                    <CardHeader className="p-3.5 pb-2">
+                      <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Wrench className="h-3.5 w-3.5 text-emerald" /> Device & Diagnostic Faults
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-3.5 pt-0 space-y-2.5">
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block">Target Device</span>
+                        <span className="font-bold text-foreground text-sm">{viewingRecord.device}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block mb-1">Detected / Reported Faults</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Array.isArray(viewingRecord.faults) && viewingRecord.faults.length > 0 ? (
+                            viewingRecord.faults.map((fault: string, i: number) => (
+                              <Badge key={i} className="bg-destructive/15 text-destructive border border-destructive/30 text-[11px]">
+                                ⚠️ {fault}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-muted-foreground font-italic">No specific faults listed</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {viewingRecord.notes && (
+                        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
+                          <span className="font-semibold block text-[10px] uppercase">Special Customer Notes</span>
+                          <span className="text-[11px]">{viewingRecord.notes}</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Schedule & Financial Breakdown */}
+                  <Card className="glass border-border/60">
+                    <CardHeader className="p-3.5 pb-2">
+                      <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <DollarSign className="h-3.5 w-3.5 text-emerald" /> Schedule & Payment Breakdown
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-3.5 pt-0">
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Requested Slot</span>
+                          <span className="font-semibold text-foreground">{viewingRecord.slot}</span>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Payment Mode</span>
+                          <span className="font-semibold text-foreground uppercase">{viewingRecord.payment_mode} ({viewingRecord.payment_method})</span>
+                        </div>
+
+                        <div className="p-2 rounded-lg bg-background/50 border border-border/40">
+                          <span className="text-[10px] text-muted-foreground block">Total Estimated Value</span>
+                          <span className="font-bold text-base text-foreground">₹{viewingRecord.estimated_total}</span>
+                        </div>
+
+                        <div className="p-2 rounded-lg bg-emerald/10 border border-emerald/30">
+                          <span className="text-[10px] text-emerald block font-semibold">Amount Paid Now</span>
+                          <span className="font-bold text-base text-emerald">₹{viewingRecord.amount_paid_now}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="text-[10px] text-muted-foreground text-right font-mono">
+                    Created at: {new Date(viewingRecord.created_at || Date.now()).toLocaleString()}
+                  </div>
+                </div>
+              )}
+
+              {/* APPLICATION RECORD DETAILED VIEW */}
+              {viewingType === "application" && (
+                <div className="space-y-3">
+                  <div className="p-3.5 rounded-xl bg-background/60 border border-border/60 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Applied Position</span>
+                      <span className="text-base font-bold text-foreground">{viewingRecord.job_title}</span>
+                    </div>
+                    <Badge className="bg-purple-500/20 text-purple-400 border-0 text-xs uppercase">
+                      {viewingRecord.status}
+                    </Badge>
+                  </div>
+
+                  <Card className="glass border-border/60">
+                    <CardContent className="p-3.5 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Candidate Name</span>
+                          <span className="font-bold text-foreground text-sm">{viewingRecord.applicant_name}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Track / Department</span>
+                          <Badge variant="secondary">{viewingRecord.track}</Badge>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Phone</span>
+                          <span className="font-mono text-foreground font-semibold">{viewingRecord.phone}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Email</span>
+                          <span className="font-mono text-foreground">{viewingRecord.email || "N/A"}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-border/40">
+                        <span className="text-[10px] text-muted-foreground block">Experience Level</span>
+                        <span className="font-semibold text-foreground text-xs">{viewingRecord.experience}</span>
+                      </div>
+
+                      {viewingRecord.skills && (
+                        <div className="pt-2 border-t border-border/40">
+                          <span className="text-[10px] text-muted-foreground block mb-1">Key Technical Skills</span>
+                          <div className="flex flex-wrap gap-1">
+                            {viewingRecord.skills.split(",").map((sk: string, idx: number) => (
+                              <Badge key={idx} variant="outline" className="text-[10px] bg-emerald/5 border-emerald/30 text-emerald">
+                                {sk.trim()}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* FAULT RULE RECORD DETAILED VIEW */}
+              {viewingType === "rule" && (
+                <div className="space-y-3">
+                  <div className="p-3.5 rounded-xl bg-background/60 border border-border/60 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Target Component</span>
+                      <span className="text-base font-bold text-foreground">{viewingRecord.device} · {viewingRecord.component}</span>
+                    </div>
+                    <Badge className="bg-emerald/20 text-emerald border-0 text-xs uppercase font-bold">
+                      5R: {viewingRecord.five_r}
+                    </Badge>
+                  </div>
+
+                  <Card className="glass border-border/60">
+                    <CardContent className="p-3.5 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Detected Condition</span>
+                          <span className="font-semibold text-foreground">{viewingRecord.condition}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Severity Rating</span>
+                          <Badge variant="outline" className="border-amber-500/40 text-amber-500">{viewingRecord.severity}</Badge>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block">Fault Classification</span>
+                        <span className="font-bold text-foreground">{viewingRecord.fault}</span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-background/50 border border-border/40">
+                        <span className="text-[10px] text-emerald font-semibold uppercase block">AI Recommendation</span>
+                        <span className="text-xs font-medium text-foreground">{viewingRecord.recommendation}</span>
+                      </div>
+
+                      {viewingRecord.safety_warning && (
+                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500">
+                          <span className="text-[10px] font-bold uppercase block">Safety Warning</span>
+                          <span className="text-xs">{viewingRecord.safety_warning}</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* FALLBACK / OTHER RECORD TYPES */}
+              {viewingType !== "pickup" && viewingType !== "application" && viewingType !== "rule" && (
+                <div className="space-y-3 text-xs bg-background/50 p-4 rounded-xl border border-border/50">
+                  <pre className="font-mono text-[11px] whitespace-pre-wrap break-words text-foreground">
+                    {JSON.stringify(viewingRecord, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
 
           <DialogFooter>
-            <Button size="sm" variant="outline" onClick={() => setViewingRecord(null)}>Close</Button>
+            <Button size="sm" variant="outline" onClick={() => setViewingRecord(null)}>
+              Close Description
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
