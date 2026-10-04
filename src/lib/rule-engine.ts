@@ -34,6 +34,16 @@ const KNOWLEDGE_BASE_RULES: Array<{
 }> = [
   {
     device: "Laptop",
+    component: "Screen",
+    condition: "Artifact Lines",
+    fault: "LCD Display Matrix Failure & Flex Ribbon Cable Distortion",
+    severity: "Medium",
+    five_r: "Reduce",
+    recommendation: "Re-seat or replace the LCD display panel matrix flex ribbon cable at a ReLife Skill Center to restore screen output.",
+    safety_warning: "⚠️ Disconnect internal laptop battery power before unseating display flex ribbon cables to avoid shorting backlight circuits.",
+  },
+  {
+    device: "Laptop",
     component: "Battery",
     condition: "Swollen",
     fault: "Lithium Battery Swelling & Gas Buildup",

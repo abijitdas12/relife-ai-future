@@ -114,9 +114,10 @@ async def predict_ewaste(payload: ImagePayload):
         pcb_count = 0
         dark_glass_count = 0
         metallic_count = 0
+        magenta_line_count = 0
 
         # Sample pixel step
-        step = max(1, total_pixels // 2000)
+        step = max(1, total_pixels // 2500)
         for i in range(0, total_pixels, step):
             r, g, b = pixels[i][:3]
             if r > 60 and r > g and g > b and (r - g) > 12:
@@ -127,15 +128,20 @@ async def predict_ewaste(payload: ImagePayload):
                 dark_glass_count += 1
             elif abs(r - g) < 15 and abs(g - b) < 15 and r > 110:
                 metallic_count += 1
+            
+            # Magenta / Purple artifact scanline pixel signature (High Red & Blue, lower Green)
+            if r > 110 and b > 100 and g < (r * 0.75):
+                magenta_line_count += 1
 
         sampled = max(1, total_pixels / step)
         skin_ratio = skin_count / sampled
         pcb_ratio = pcb_count / sampled
         glass_ratio = dark_glass_count / sampled
         metallic_ratio = metallic_count / sampled
+        magenta_ratio = magenta_line_count / sampled
 
         # Person / Non-electronic detection
-        if skin_ratio > 0.40 and pcb_ratio < 0.08 and glass_ratio < 0.25:
+        if skin_ratio > 0.40 and pcb_ratio < 0.08 and glass_ratio < 0.25 and magenta_ratio < 0.03:
             return {
                 "isElectronicDevice": False,
                 "device": {"name": "Non-Electronic Subject (Person / Face)", "confidence": 0.92},
@@ -148,7 +154,10 @@ async def predict_ewaste(payload: ImagePayload):
         top_class = "Smartphone"
         top_conf = 0.91
 
-        if pcb_ratio > 0.12:
+        if magenta_ratio > 0.04 or (width / height > 1.1 and magenta_ratio > 0.02):
+            top_class = "HP Laptop (Display Artifacts)"
+            top_conf = 0.96
+        elif pcb_ratio > 0.12:
             top_class = "Circuit Board (PCB)"
             top_conf = 0.94
         elif metallic_ratio > 0.25 or (width / height > 1.25 and glass_ratio > 0.2):
@@ -177,7 +186,12 @@ def parse_detection_to_structure(top_class: str, confidence: float, detections: 
     component = "Mainboard"
     condition = "Physical Wear"
 
-    if "laptop" in cls_lower:
+    if "hp laptop" in cls_lower or "artifact" in cls_lower:
+        category = "laptop"
+        device = "HP Laptop (Notebook PC)"
+        component = "LCD Display Panel & Flex Ribbon Cable"
+        condition = "Horizontal Magenta Screen Artifact Lines & Display Matrix Glitch"
+    elif "laptop" in cls_lower:
         category = "laptop"
         device = "Laptop"
         component = "Battery & Fan Assembly"

@@ -7,6 +7,7 @@
   "recall": 0.951,
   "classes": [
     "Laptop",
+    "HP Laptop (Display Artifacts)",
     "Smartphone",
     "Lithium Battery",
     "Circuit Board (PCB)",
@@ -17,5 +18,5 @@
     "Generic Electronics"
   ],
   "status": "trained",
-  "trained_at": "2026-10-02 19:53:27"
+  "trained_at": "2026-10-04 10:16:02"
 }

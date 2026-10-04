@@ -572,6 +572,7 @@ function ScanOverlay() {
 }
 
 const REFINEMENT_PRESETS = [
+  { label: "💻 HP Laptop (Screen Lines / Glitch)", device: "Laptop", component: "Screen", condition: "Artifact Lines" },
   { label: "📱 Smartphone (Screen Crack)", device: "Smartphone", component: "Screen", condition: "Cracked" },
   { label: "📱 Smartphone (Corroded Port)", device: "Smartphone", component: "Charging Port", condition: "Corroded" },
   { label: "💻 Laptop (Swollen Battery)", device: "Laptop", component: "Battery", condition: "Swollen" },

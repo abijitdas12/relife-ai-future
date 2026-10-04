@@ -24,7 +24,7 @@ PROJECT_ID = "balanced-e-waste-dataset"
 DATASET_VERSION = 2
 
 CLASSES = [
-    "Laptop", "Smartphone", "Lithium Battery", "Circuit Board (PCB)",
+    "Laptop", "HP Laptop (Display Artifacts)", "Smartphone", "Lithium Battery", "Circuit Board (PCB)",
     "Charger / Cable", "Display Panel", "Desktop PC", "Earphones", "Generic Electronics"
 ]
 
