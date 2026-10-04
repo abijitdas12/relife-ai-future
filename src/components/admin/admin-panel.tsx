@@ -294,7 +294,7 @@ const SEED_SKILL_CENTERS: SkillCenterRecord[] = [
 export function AdminPanel() {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [adminEmail, setAdminEmail] = useState<string>("joydeep172013@gmail.com");
+  const [adminEmail, setAdminEmail] = useState<string>("");
   const [adminPassword, setAdminPassword] = useState<string>("");
   const [passcodeError, setPasscodeError] = useState<string>("");
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
@@ -527,8 +527,8 @@ export function AdminPanel() {
     if (isValidAdmin) {
       setIsAuthenticated(true);
       localStorage.setItem("relife_admin_authenticated", "true");
-      localStorage.setItem("relife_admin_email", emailInput || "joydeep172013@gmail.com");
-      toast.success(`Signed in as Admin (${emailInput || "joydeep172013@gmail.com"})`);
+      localStorage.setItem("relife_admin_email", emailInput || "admin@relife.ai");
+      toast.success(`Signed in as Admin (${emailInput || "admin@relife.ai"})`);
       logAction("System", "Admin user logged into Dashboard session");
     } else {
       setPasscodeError("Invalid Admin ID or Password. Check your credentials.");
@@ -786,7 +786,7 @@ export function AdminPanel() {
                 </label>
                 <Input
                   type="email"
-                  placeholder="joydeep172013@gmail.com"
+                  placeholder="admin@relife.ai"
                   value={adminEmail}
                   onChange={(e) => {
                     setAdminEmail(e.target.value);
@@ -803,7 +803,7 @@ export function AdminPanel() {
                 </label>
                 <Input
                   type="password"
-                  placeholder="Password (HareKrishna17)"
+                  placeholder="Enter admin password"
                   value={adminPassword}
                   onChange={(e) => {
                     setAdminPassword(e.target.value);
@@ -824,11 +824,6 @@ export function AdminPanel() {
                 )}
                 {isAuthenticating ? "Authenticating..." : "Sign In to Admin Dashboard"}
               </Button>
-
-              <div className="rounded-xl border border-emerald/20 bg-emerald/5 p-3 text-xs text-muted-foreground text-center">
-                🔑 <span className="font-semibold text-foreground">Configured Admin ID:</span>{" "}
-                <code className="text-emerald font-mono">joydeep172013@gmail.com</code>
-              </div>
             </form>
           </CardContent>
         </Card>
