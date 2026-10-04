@@ -352,7 +352,22 @@ export function getBuiltInFallbackVisionOutput(
   let likelyFault = "LCD Display Panel Failure & Flex Ribbon Cable Fault";
   let confidence = 0.95;
 
-  if (hasLineArtifactKeywords || isDisplayArtifactPayload || descLower.includes("laptop") || descLower.includes("macbook")) {
+  const isHeadphoneKeyword =
+    descLower.includes("headphone") ||
+    descLower.includes("headset") ||
+    descLower.includes("earphone") ||
+    descLower.includes("earbud") ||
+    descLower.includes("headband") ||
+    descLower.includes("earpad") ||
+    descLower.includes("cushion");
+
+  if (isHeadphoneKeyword) {
+    cat = "headphones_earbuds";
+    brandModel = "Over-Ear Headphones (Broken Headband)";
+    visibleDamage = ["Snapped Plastic Headband Bridge", "Exposed Driver Wiring", "Worn Earpad Cushioning"];
+    likelyFault = "Headband Structural Fracture & Driver Cable Strain";
+    confidence = 0.94;
+  } else if (hasLineArtifactKeywords || isDisplayArtifactPayload || descLower.includes("laptop") || descLower.includes("macbook")) {
     cat = "laptop";
     brandModel = "HP Laptop (Notebook PC)";
     visibleDamage = ["Horizontal Magenta Screen Artifact Lines", "LCD Matrix Display Glitch"];

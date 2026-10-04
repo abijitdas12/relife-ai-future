@@ -393,11 +393,28 @@ export function ScanFlow() {
             </label>
             <input
               type="text"
-              placeholder="e.g. Battery swelling, screen digitizer cracked, charging port loose..."
+              placeholder="e.g. Broken headband, battery swelling, screen lines..."
               value={userFaultDescription}
               onChange={(e) => setUserFaultDescription(e.target.value)}
               className="w-full rounded-xl border border-input bg-background/80 px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald"
             />
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {[
+                { label: "🎧 Headphones (Broken Headband / Cable)", text: "Headphones snapped headband broken cable" },
+                { label: "💻 Laptop (Screen Artifact Lines)", text: "Laptop display pink artifact lines" },
+                { label: "🔋 Swollen Battery", text: "Swollen lithium battery cell" },
+                { label: "📱 Cracked Screen", text: "Cracked screen digitizer glass" },
+              ].map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setUserFaultDescription(preset.text)}
+                  className="rounded-lg border border-border/60 bg-secondary/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-emerald/40 hover:bg-secondary hover:text-foreground"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="relative mt-4 flex flex-wrap gap-3">

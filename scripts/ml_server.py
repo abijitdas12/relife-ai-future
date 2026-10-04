@@ -251,11 +251,11 @@ def parse_detection_to_structure(top_class: str, confidence: float, detections: 
         device = "Power Bank"
         component = "Lithium Battery Cells"
         condition = "Cell Capacity Degradation"
-    elif "headphone" in cls_lower or "earbud" in cls_lower or "earphone" in cls_lower:
+    elif "headphone" in cls_lower or "earbud" in cls_lower or "earphone" in cls_lower or "headset" in cls_lower:
         category = "headphones_earbuds"
-        device = "Headphones / Earbuds"
-        component = "Audio Driver & Cable"
-        condition = "Driver Distortion & Wire Wear"
+        device = "Over-Ear Headphones (Broken Headband)"
+        component = "Headband Plastic Bridge & Audio Driver Flex Wire"
+        condition = "Snapped Headband Structural Joint & Worn Earpad Cushions"
     elif "speaker" in cls_lower:
         category = "speaker"
         device = "Audio Speaker"

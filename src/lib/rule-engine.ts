@@ -142,6 +142,26 @@ const KNOWLEDGE_BASE_RULES: Array<{
     recommendation: "Recycle charger at an e-waste drop point. Do not attempt internal repair.",
     safety_warning: "⚠️ Severe Fire Risk: Disconnect from wall socket immediately.",
   },
+  {
+    device: "Headphones",
+    component: "Headband",
+    condition: "Snapped",
+    fault: "Headband Plastic Bridge Structural Fracture & Flex Wire Strain",
+    severity: "Low",
+    five_r: "Reuse",
+    recommendation: "Reinforce broken headband joint using a 3D-printed sleeve clamp bracket or epoxy splice, and verify audio wire continuity.",
+    safety_warning: "Do not pull on exposed audio driver flex wires to prevent tearing copper conductors.",
+  },
+  {
+    device: "Headphones",
+    component: "Ear Cushion",
+    condition: "Worn",
+    fault: "Synthetic Earpad Leather Degradation & Foam Compression",
+    severity: "Low",
+    five_r: "Reuse",
+    recommendation: "Replace worn synthetic ear cushions with snap-on velour or protein-leather replacement earpads.",
+    safety_warning: "Clean earcup rim surfaces before installing new replacement cushions.",
+  },
 ];
 
 const DEFAULT_DISCLAIMER =

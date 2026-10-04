@@ -25,7 +25,7 @@ DATASET_VERSION = 2
 
 CLASSES = [
     "Laptop", "HP Laptop (Display Artifacts)", "Smartphone", "Lithium Battery", "Circuit Board (PCB)",
-    "Charger / Cable", "Display Panel", "Desktop PC", "Earphones", "Generic Electronics"
+    "Charger / Cable", "Display Panel", "Desktop PC", "Headphones (Broken Headband)", "Earphones / Earbuds", "Generic Electronics"
 ]
 
 def simulate_training_epochs(epochs: int = 50):
