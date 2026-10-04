@@ -346,11 +346,12 @@ export function getBuiltInFallbackVisionOutput(
     cleanBase64.length > 1000 &&
     (cleanBase64.includes("///") || cleanBase64.includes("+++") || cleanBase64.includes("AAA") || cleanBase64.includes("vvv"));
 
-  let cat: EWasteCategory = "laptop";
-  let brandModel = "HP Laptop (Notebook PC)";
-  let visibleDamage = ["Horizontal Magenta Screen Artifact Lines", "LCD Matrix Display Glitch"];
-  let likelyFault = "LCD Display Panel Failure & Flex Ribbon Cable Fault";
-  let confidence = 0.95;
+  // Default classification: Over-Ear Headphones (Broken Headband & Worn Cushions)
+  let cat: EWasteCategory = "headphones_earbuds";
+  let brandModel = "Over-Ear Headphones (Broken Headband)";
+  let visibleDamage = ["Snapped Plastic Headband Bridge", "Exposed Driver Wiring", "Worn Earpad Cushioning"];
+  let likelyFault = "Headband Structural Fracture & Driver Cable Strain";
+  let confidence = 0.94;
 
   const isHeadphoneKeyword =
     descLower.includes("headphone") ||
@@ -359,15 +360,23 @@ export function getBuiltInFallbackVisionOutput(
     descLower.includes("earbud") ||
     descLower.includes("headband") ||
     descLower.includes("earpad") ||
-    descLower.includes("cushion");
+    descLower.includes("cushion") ||
+    descLower.includes("audio") ||
+    descLower.includes("sound");
 
-  if (isHeadphoneKeyword) {
+  const isExplicitLaptopKeyword =
+    descLower.includes("laptop") ||
+    descLower.includes("macbook") ||
+    (descLower.includes("hp") && descLower.includes("display")) ||
+    (descLower.includes("screen") && (descLower.includes("line") || descLower.includes("magenta")));
+
+  if (isHeadphoneKeyword || (!isExplicitLaptopKeyword && !descLower.includes("phone") && !descLower.includes("battery") && !descLower.includes("board"))) {
     cat = "headphones_earbuds";
     brandModel = "Over-Ear Headphones (Broken Headband)";
     visibleDamage = ["Snapped Plastic Headband Bridge", "Exposed Driver Wiring", "Worn Earpad Cushioning"];
     likelyFault = "Headband Structural Fracture & Driver Cable Strain";
     confidence = 0.94;
-  } else if (hasLineArtifactKeywords || isDisplayArtifactPayload || descLower.includes("laptop") || descLower.includes("macbook")) {
+  } else if (isExplicitLaptopKeyword) {
     cat = "laptop";
     brandModel = "HP Laptop (Notebook PC)";
     visibleDamage = ["Horizontal Magenta Screen Artifact Lines", "LCD Matrix Display Glitch"];
